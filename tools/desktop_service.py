@@ -11,7 +11,7 @@ import sys
 from tempfile import TemporaryDirectory
 import uuid
 from datetime import date
-from .engine import Store, Context, BLOCKED, unsafe_fact
+from .engine import Store, Context, BLOCKED, unsafe_fact, iso
 from .governance import Evidence
 from .json_input import parse_json
 
@@ -27,9 +27,20 @@ def candidates(value):
     if not isinstance(value,list) or len(value)>16:raise ValueError('候选必须为最多16项的数组')
     for c in value:
         if not isinstance(c,dict) or set(c)-CANDIDATE_FIELDS or c.get('op') not in ('set','derive','retire','delete','review'):raise ValueError('候选包含未支持操作或越权字段')
-        if not re.fullmatch('[a-z][a-z0-9_]{0,63}',c.get('key','')):raise ValueError('候选字段名无效')
+        if not isinstance(c.get('key'),str) or not re.fullmatch('[a-z][a-z0-9_]{0,63}',c['key']) or c['key'].endswith('__previous'):raise ValueError('候选字段名无效')
         if c['op'] in ('set','derive'):short(c.get('value'),500)
-        if c['op']=='derive' and (not isinstance(c.get('parents'),list) or not c['parents']):raise ValueError('派生缺少来源')
+        elif set(c)-{'op','key'}:raise ValueError('删除、失效和复核只接受字段名，不附带值或写入条件')
+        for flag in ('archive_old','reactivate','current_correction'):
+            if flag in c and type(c[flag]) is not bool:raise ValueError('候选开关必须为布尔值')
+        for field,allowed in (('state',('current','completed','pending','history')),('privacy',('private','restricted','high')),('kind',('fact','task','reminder'))):
+            if field in c and c[field] not in allowed:raise ValueError('候选状态、敏感等级或类型无效')
+        if 'ttl' in c:short(c['ttl'],500)
+        for field in ('event_time','expires_at','due_at'):
+            if field in c:iso(c[field])
+        if c.get('expires_at','9999-12-31')<c.get('event_time','0001-01-01'):raise ValueError('到期日期早于事件日期')
+        if 'due_at' in c and c.get('kind') in ('fact','reminder'):raise ValueError('只有任务可有截止日')
+        if c.get('kind')=='task' and 'expires_at' in c:raise ValueError('任务截止使用due_at')
+        if c['op']=='derive' and (not isinstance(c.get('parents'),list) or not 1<=len(c['parents'])<=32 or any(not isinstance(p,str) or not p for p in c['parents']) or len(set(c['parents']))!=len(c['parents'])):raise ValueError('派生来源引用无效')
         if 'parents' in c and c['op']!='derive':raise ValueError('非派生操作不能指定谱系')
     return value
 
@@ -156,7 +167,8 @@ class Service:
                     before=store.read(ctx,ctx.role);seq=state['revision']+1
                     try:
                         if candidate.pop('op')=='derive':
-                            result=store.derive(ctx,seq=seq,key=candidate['key'],value=candidate['value'],parents=candidate['parents'])
+                            parents=candidate.pop('parents')
+                            result=store.apply(ctx,{'seq':seq,'ops':[dict(candidate,op='set')]},_derivations={candidate['key']:parents})
                         else:
                             operation=turn['candidates'][index]['op']
                             result=store.apply(ctx,{'seq':seq,'ops':[dict(candidate,op=operation)]},evidence=Evidence(f'{scope_id}/{seq}','owner_direct' if confirmed else 'inference',len(state['turns']),scope_id))
@@ -179,7 +191,7 @@ class Service:
                 state['governance']=store.export_governance(ctx)
                 # Scrub controlled replay payloads using the core's actual erased version IDs.
                 erased={r['version_id'] for r in state['governance']['versions'] if r['payload'] is None}
-                erased_keys={r['key'] for r in state['governance']['versions'] if r['version_id'] in erased}
+                erased_revisions={(r['key'],r['revision']) for r in state['governance']['versions'] if r['version_id'] in erased}
                 newly_erased=erased-set(state.get('scrubbed_versions',[]))
                 candidate_keys={r['key'] for r in state['governance']['versions'] if r['version_id'] in newly_erased}
                 for t in state['turns']:
@@ -196,7 +208,7 @@ class Service:
                     for snap in (f['before'],f['after']):
                         for group in snap.values():
                             for key in list(group):
-                                if key.removesuffix('__previous') in erased_keys and group[key]['version']<=max([r['revision'] for r in state['governance']['versions'] if r['key']==key.removesuffix('__previous') and r['version_id'] in erased] or [-1]):del group[key]
+                                if (key.removesuffix('__previous'),group[key]['version']) in erased_revisions:del group[key]
                 state['revision']+=1
             blob=path.read_bytes()
         # Optimistic CAS is repeated under the catalog write lock, across processes.

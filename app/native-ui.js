@@ -39,6 +39,7 @@ const call=request=>invoke('experiment_call',{request});
 const button=(text,action)=>{const b=doc.createElement('button');b.textContent=text;b.type='button';b.setAttribute('data-idle','');b.onclick=()=>guard(action);return b;};
 const text=(tag,value)=>{const el=doc.createElement(tag);el.textContent=value??'未记录';return el;};
 const notice=message=>{ui.status.textContent=message;};
+function clearPreview(){ui.live.replaceChildren();ui.live.hidden=true;}
 async function guard(action){
  if(working)return;
  working=true;busy(true);
@@ -57,13 +58,13 @@ async function libraries(){
  const rows=await call({op:'list'});ui.experiments.replaceChildren(new Option('选择已保存实验',''),...rows.map(x=>new Option(x.name,x.id)));ui.experiments.value=exp?.id||'';
  profiles=await call({op:'profiles'});ui.models.replaceChildren(new Option('选择模型配置',''),...profiles.map(x=>new Option(x.name+' · '+x.model,x.id)));ui.models.value=profileId&&profiles.some(p=>p.id===profileId)?profileId:'';
 }
-async function open(id){if(!id)return;exp=await call({op:'open',id});frameIndex=Math.max(0,exp.frames.length-1);selected=null;ui.name.value=exp.name;ui.rules.value=exp.rules.text;render();ui.setup.open=!profiles.length;}
+async function open(id){if(!id)return;const loaded=await call({op:'open',id});clearPreview();exp=loaded;frameIndex=Math.max(0,exp.frames.length-1);selected=null;ui.name.value=exp.name;ui.rules.value=exp.rules.text;render();ui.setup.open=!profiles.length;}
 async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');exp=await call({op,id:exp.id,revision:exp.revision,...extra});frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename')await libraries();else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
 function render(){
  if(!exp){
   ui.name.value='';ui.policy.textContent='';ui.policy.title='';ui.recover.hidden=true;
   ui.position.max='0';ui.position.value='0';ui.round.textContent='尚无对话';ui.send.disabled=true;
-  ui.memories.replaceChildren();ui.details.replaceChildren();ui.live.hidden=true;
+  ui.memories.replaceChildren();ui.details.replaceChildren();clearPreview();
   ui.conversation.replaceChildren(text('h2','开始一次真实模型实验'),text('p','配置模型，确认守则，再新建实验。对话与记忆只保存在本机。'));
   return;
  }
@@ -111,10 +112,10 @@ function createDialog(){
  for(const id of ['close','experiments','name','new','rename','remove','reset','export','models','provider','protocol','base','model','key','save-key','profile-save','test','profile-delete','profile-new','rules','rules-import','setup','policy','status','recover','chat-view','graph-view','filter','fit','graph-note','live','conversation','graph','memories','details','position','round','composer','input','send','cancel','stream'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('cancel',e=>{e.preventDefault();if(!working)leave();});
  const bind=(name,fn)=>ui[name].addEventListener('click',()=>guard(fn));
- bind('close',leave);bind('new',async()=>{exp=await call({op:'create',name:ui.name.value||'未命名实验',rules:ui.rules.value});frameIndex=0;selected=null;ui.name.value=exp.name;render();await libraries();ui.setup.open=!profiles.length;});
+ bind('close',leave);bind('new',async()=>{exp=await call({op:'create',name:ui.name.value||'未命名实验',rules:ui.rules.value});clearPreview();frameIndex=0;selected=null;ui.name.value=exp.name;render();await libraries();ui.setup.open=!profiles.length;});
  bind('rename',()=>mutate('rename',{name:ui.name.value}));
  bind('remove',async()=>{if(exp&&root.confirm('永久删除本机这一实验及对话、记忆数据库？已有外部导出不会被删除。')){await call({op:'remove',id:exp.id});exp=null;selected=null;graph?.dispose();graph=null;ui.memories.replaceChildren();ui.details.replaceChildren();render();await libraries();}});
- bind('reset',async()=>{if(!exp||!root.confirm('保留原实验，新建同守则的空实验？'))return;exp=await call({op:'create',name:exp.name+' · 重置',rules:exp.rules.text});frameIndex=0;selected=null;ui.name.value=exp.name;render();await libraries();ui.setup.open=!profiles.length;});
+ bind('reset',async()=>{if(!exp||!root.confirm('保留原实验，新建同守则的空实验？'))return;exp=await call({op:'create',name:exp.name+' · 重置',rules:exp.rules.text});clearPreview();frameIndex=0;selected=null;ui.name.value=exp.name;render();await libraries();ui.setup.open=!profiles.length;});
  ui.experiments.onchange=()=>guard(()=>open(ui.experiments.value));
  ui.protocol.onchange=()=>{ui.base.value={openai:'https://api.openai.com/v1',anthropic:'https://api.anthropic.com/v1',gemini:'https://generativelanguage.googleapis.com/v1beta'}[ui.protocol.value];};
  ui.models.onchange=()=>{profileId=ui.models.value;const p=profiles.find(x=>x.id===profileId);ui.key.value='';ui.saveKey.checked=false;if(p){ui.provider.value=p.name;ui.protocol.value=p.protocol;ui.base.value=p.base_url;ui.model.value=p.model;}};
@@ -127,11 +128,34 @@ function createDialog(){
  bind('export',async()=>{if(!exp)throw Error('请先打开实验');const sections=['rules','memory','turns'].filter(x=>dialog.querySelector('#nl-export-'+x).checked);if(!sections.length)throw Error('请选择导出范围');notice(await invoke('export_experiment',{id:exp.id,sections})?'已保存所选实验数据。':'已取消导出。');});
  bind('chatView',()=>{ui.graph.hidden=true;ui.conversation.hidden=false;ui.chatView.setAttribute('aria-pressed','true');ui.graphView.setAttribute('aria-pressed','false');graph?.setPaused(true);});bind('graphView',()=>{ui.conversation.hidden=true;ui.graph.hidden=false;ui.chatView.setAttribute('aria-pressed','false');ui.graphView.setAttribute('aria-pressed','true');graphData();graph?.setPaused(false);});bind('fit',()=>graph?.reset());ui.filter.onchange=render;
  ui.position.oninput=()=>{frameIndex=Number(ui.position.value);render();};
- ui.composer.onsubmit=e=>{e.preventDefault();guard(async()=>{if(!exp)throw Error('请新建实验');const profile=profiles.find(x=>x.id===profileId);if(!profile)throw Error('请选择模型配置');const input=ui.input.value;if(!input.trim())return;busy(true);const preview=text('p','等待响应…');ui.live.replaceChildren(text('small','本轮输入'),text('p',input),text('small','AI 回复 · 接收中，尚未保存'),preview);ui.live.hidden=false;let streamed='';running=runner({call,model,cancel:requestId=>invoke('cancel_model',{requestId}),onText:piece=>{streamed+=piece;preview.textContent=streamed;}});ui.cancel.disabled=false;try{notice('正在请求模型；尚未提交记忆。');exp=await running.send(exp,{...profile,stream:ui.stream.checked},input);ui.input.value='';frameIndex=exp.frames.length-1;render();notice('对话已保存。请逐项确认、隔离或忽略模型建议，再开始下一轮。');}finally{running=null;ui.live.hidden=true;if(exp){exp=await call({op:'open',id:exp.id});frameIndex=exp.frames.length-1;render();}}});};
+ ui.composer.onsubmit=e=>{e.preventDefault();return guard(async()=>{
+  if(!exp)throw Error('请新建实验');
+  const profile=profiles.find(x=>x.id===profileId);if(!profile)throw Error('请选择模型配置');
+  const input=ui.input.value;if(!input.trim())return;
+  const phase=text('small','AI 回复 · 接收中，尚未保存'),preview=text('p','等待响应…');
+  ui.live.replaceChildren(text('small','本轮输入'),text('p',input),phase,preview);ui.live.hidden=false;
+  let streamed='',saved=false;
+  running=runner({call,model,cancel:requestId=>invoke('cancel_model',{requestId}),onText:piece=>{streamed+=piece;preview.textContent=streamed;}});
+  ui.cancel.disabled=false;
+  try{
+   notice('正在请求模型；尚未提交记忆。');
+   exp=await running.send(exp,{...profile,stream:ui.stream.checked},input);saved=true;
+   ui.input.value='';frameIndex=exp.frames.length-1;render();
+   notice(exp.turns.at(-1).candidates.length?'对话已保存。请逐项确认、隔离或忽略模型建议，再开始下一轮。':'对话已保存，本轮没有待处理建议。');
+  }catch(error){
+   phase.textContent='AI 回复 · 未确认保存，请以已保存轮次为准';
+   if(!streamed)preview.textContent='本轮未收到完整回复。';
+   // Recover the committed revision after any failed or uncertain write. Keep both
+   // errors if recovery also fails; never imply a failed read proves no commit.
+   try{exp=await call({op:'open',id:exp.id});frameIndex=Math.max(0,exp.frames.length-1);render();}
+   catch(recovery){phase.textContent='AI 回复 · 保存状态未确认';throw Error(`${error}；保存状态无法核对：${recovery}。请重新打开实验。`);}
+   throw error;
+  }finally{running=null;ui.live.hidden=saved;}
+ });};
  ui.input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ui.composer.requestSubmit();}};
  ui.cancel.addEventListener('click',async()=>{try{await running?.stop();notice('已请求取消，正在核对保存状态。');}catch(e){notice(String(e));}});
 }
-function leave(){if(running?.busy)throw Error('请先取消请求或等待结束');graph?.dispose();graph=null;dialog.close();entry.focus();}
+function leave(){if(running?.busy)throw Error('请先取消请求或等待结束');graph?.dispose();graph=null;clearPreview();dialog.close();entry.focus();}
 root.addEventListener('pagehide',()=>{running?.stop();graph?.dispose();graph=null;});
 entry.onclick=()=>{if(!dialog)createDialog();return guard(async()=>{root.dispatchEvent(new Event('memory-native-open'));dialog.showModal();if(!exp)ui.rules.value=await invoke('default_rules');await libraries();render();});};
 })(typeof window!=='undefined'?window:globalThis);

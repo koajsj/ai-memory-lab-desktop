@@ -195,3 +195,59 @@ def test_clearing_candidate_preserves_independent_archived_fact(service):
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
     assert not exp['snapshot']['current'] and not exp['snapshot']['history']
     assert all(r['payload'] is None for r in exp['governance']['versions'])
+
+
+def test_derived_candidate_preserves_stricter_conditions(service):
+    exp=finish(service,create(service),candidates=[{'op':'set','key':'basis','value':'已确认依据','expires_at':'2099-01-01'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    parent=exp['governance']['versions'][-1]['version_id']
+    exp=finish(service,exp,candidates=[{'op':'derive','key':'summary','value':'仅在较短期限内使用','parents':[parent],'expires_at':'2098-01-01','privacy':'restricted'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['snapshot']['current']['summary']['expires_at']=='2098-01-01'
+    assert exp['snapshot']['current']['summary']['privacy']=='restricted'
+    assert exp['governance']['versions'][-1]['parents']==[parent]
+
+
+@pytest.mark.parametrize('extra',[
+    {'current_correction':'false'}, {'state':'unknown'}, {'event_time':'2099-02-30'},
+    {'ttl':[]}, {'privacy':'public'}, {'kind':'other'}, {'kind':'fact','due_at':'2099-01-01'},
+])
+def test_invalid_candidate_conditions_never_persist(service,extra):
+    exp=create(service)
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'合法输入','request_id':'invalid','model':{}})
+    saved=service.call({'op':'open','id':p['id']})
+    proposed=[dict(op='set',key='fact',value='候选内容',**extra)]
+    with pytest.raises(ValueError):service.call({'op':'validate_candidates','candidates':proposed})
+    with pytest.raises(ValueError):service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'invalid','reply':'实际回复','candidates':proposed})
+    assert service.call({'op':'open','id':p['id']})==saved
+
+
+def test_cascade_scrubbing_preserves_independent_history_in_frames(service):
+    exp=create(service)
+    for key,value in [('basis','根事实'),('summary','独立的早期确认')]:
+        exp=finish(service,exp,candidates=[{'op':'set','key':key,'value':value}])
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    parent=next(r['version_id'] for r in exp['governance']['versions'] if r['key']=='basis')
+    exp=finish(service,exp,candidates=[{'op':'derive','key':'summary','value':'依赖根事实的后续摘要','parents':[parent],'current_correction':True,'archive_old':True}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['snapshot']['history']['summary__previous']['value']=='独立的早期确认'
+    exp=finish(service,exp,candidates=[{'op':'delete','key':'basis'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['snapshot']['history']['summary__previous']['value']=='独立的早期确认'
+    assert exp['frames'][-1]['after']==exp['snapshot']
+    assert any(f['after']['history'].get('summary__previous',{}).get('value')=='独立的早期确认' for f in exp['frames'])
+    assert '依赖根事实的后续摘要' not in json.dumps(exp['frames'],ensure_ascii=False)
+
+
+def test_failed_reply_save_keeps_original_pending_state(service):
+    exp=create(service)
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'等待完整回复','request_id':'save-failure','model':{}})
+    stored=service.call({'op':'open','id':p['id']})
+    service.db.execute("CREATE TRIGGER fail_reply BEFORE UPDATE ON experiments BEGIN SELECT RAISE(ABORT,'forced save failure'); END")
+    with pytest.raises(sqlite3.Error):
+        service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'save-failure','reply':'模型已经回复','candidates':[{'op':'set','key':'example','value':'尚未提交'}]})
+    service.db.execute('DROP TRIGGER fail_reply')
+    assert Service(service.root).call({'op':'open','id':p['id']})==stored
+    recovered=service.call({'op':'abort','id':p['id'],'revision':p['revision'],'request_id':'save-failure','status':'interrupted'})
+    assert recovered['pending'] is None and not recovered['snapshot']['current']
+    assert recovered['turns'][-1]['status']=='interrupted'

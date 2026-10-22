@@ -44,12 +44,12 @@ class El {
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
  async click(){if(this.onclick)await this.onclick();for(const f of this.events.click||[])await f();}
 }
-let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;
+let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false;
 const service=q=>JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
 const win={document:{body:new El('body'),createElement:tag=>new El(tag),getElementById:()=>originalEntry},MemoryModel:globalThis.MemoryModel,MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener(){},confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
- if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;return service(args.request);}
+ if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');return service(args.request);}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答'}]}),usage:null};}
  if(command==='cancel_model')return;
@@ -64,9 +64,6 @@ try{
  e('model').value='edited-model';await e('profile-save').click();assert.equal(savedProfileKey,null,'editing metadata with blank key must preserve the existing credential');
  e('input').value='请记住我喜欢简洁回答';e('stream').checked=true;
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
- for(let n=0;n<50&&requests<2;n++)await new Promise(r=>setTimeout(r,5));
- for(let n=0;n<50&&!service({op:'open',id:service({op:'list'})[0].id}).turns.length;n++)await new Promise(r=>setTimeout(r,5));
- await new Promise(r=>setTimeout(r,20));
  const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
  const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);await confirm.click();
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
@@ -74,8 +71,6 @@ try{
  await e('memories').children[0].click();assert(e('details').children.length>0);
  // A current fact and isolated candidate of the same field must select different versions.
  e('input').value='也许我需要详细回答';await e('composer').onsubmit({preventDefault(){}});
- for(let n=0;n<100&&service({op:'open',id:rows[0].id}).turns.length<2;n++)await new Promise(r=>setTimeout(r,5));
- await new Promise(r=>setTimeout(r,20));
  // Use the actual core to isolate the second proposal, then reopen via the real handler.
  let conflict=service({op:'open',id:rows[0].id});
  conflict=service({op:'decide',id:conflict.id,revision:conflict.revision,index:0,confirm:false});
@@ -102,6 +97,21 @@ try{
  assert.equal(e('new').disabled,true,'opening an experiment must lock competing mutations');
  releaseOpen();await opening;holdOpen=null;
  e('name').value='新的空实验';await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
+ // A complete provider reply must remain visible as unsaved when the catalog fails.
+ failFinish=true;e('input').value='保存失败时保留输入';
+ await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(e('live').hidden,false,'do not discard the received reply when persistence fails');
+ assert(e('live').children.some(n=>n.textContent.includes('未确认保存')),'failed replies must never look like saved results');
+ assert.equal(e('input').value,'保存失败时保留输入');
+ assert(e('status').textContent.includes('实验保存失败样本'));
+ failOpen=true;await e('composer').onsubmit({preventDefault(){}});
+ // The submit handler returns the guard so state/error checks need no timing guess.
+ assert(e('status').textContent.includes('实验保存失败样本'),'recovery failure must not hide the original save error');
+ assert(e('status').textContent.includes('实验重读失败样本'));
+ failFinish=false;failOpen=false;
+ e('name').value='失败后独立新实验';await e('new').click();
+ assert.equal(e('live').hidden,true,'a new experiment must not display another experiment’s transient reply');
+ assert.equal(e('live').children.length,0,'remove the old transient preview, not only its visibility');
  graphInstance.destroyed=true;graphInstance.options.onUnavailable('WebGL运行失败，请使用二维记忆列表。');
  e('filter').onchange();
  assert.equal(e('graph-note').textContent,'WebGL运行失败，请使用二维记忆列表。','rerender must retain the runtime WebGL fallback explanation');

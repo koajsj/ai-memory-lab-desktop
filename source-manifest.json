@@ -6,8 +6,8 @@
       "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
     },
     ".github/workflows/windows.yml": {
-      "size": 9416,
-      "sha256": "a39e5f3410764b6066409625d23ecf10ab5e5e1528163d12aa82125cf6461f5c"
+      "size": 10601,
+      "sha256": "e9b2ba2ca3dd40c7c8c7f8945de892c8654205dad5f535036374c5c71809ef78"
     },
     ".gitignore": {
       "size": 272,
@@ -78,8 +78,8 @@
       "sha256": "5ee689c3463d2d14f2b2fe75b395e1669f19e225d3131f9d8f30e3b7376b431d"
     },
     "app/package-windows.mjs": {
-      "size": 10819,
-      "sha256": "d20349162d94c075ad0731812470fc4822162bb36708fa6d9d50e4dd58840003"
+      "size": 16046,
+      "sha256": "12303fabda6067152faaa053f9e481c3e94943436aa7bd56074e6da7d43ab834"
     },
     "app/package.json": {
       "size": 971,
@@ -90,8 +90,8 @@
       "sha256": "37e23324d22a5431bc141c576ecc8411ede4fc97d012ba1d1bff74b058949241"
     },
     "app/prepare-windows-ci.py": {
-      "size": 6205,
-      "sha256": "ac97da796d0e4a6533cf18cdde7847a7065de5de3fbbb6d67c8932f7eeac1238"
+      "size": 6240,
+      "sha256": "9403cc5c2b6c06dfcb71345b0de8502297067c31652f666a7772522a04b86654"
     },
     "app/sandbox.js": {
       "size": 20484,
@@ -150,8 +150,8 @@
       "sha256": "d7bfc1e72e97e2dfcbe50f4bd3a922cb29793de9093a51f2e4bced865ccde5cc"
     },
     "app/src-tauri/tauri.windows.conf.json": {
-      "size": 316,
-      "sha256": "c2c4a4b437a0544188ba677b5cbbd987616d24627c1e320cbe26460706a6379a"
+      "size": 461,
+      "sha256": "7c8559d3111aebf1acb472f63dd71102ee45015234a92a26bf2ccea56c8eb67d"
     },
     "app/state.js": {
       "size": 835,
@@ -166,8 +166,8 @@
       "sha256": "9651b00eb6b73fe34a9a8b644c25d7f654610288b0e1b4fc838b1c033bae5196"
     },
     "docs/windows-delivery.md": {
-      "size": 4679,
-      "sha256": "c121770b1a7063aaf5b57aeb8e6bc2585dce75fcb3da96ffcd0d025165326101"
+      "size": 5604,
+      "sha256": "8f9c3b620f987d81e036a8c8cbf2df0090972c5c8dce3ec1139ae40d3fc025c3"
     },
     "memory-rules.md": {
       "size": 15697,
@@ -186,8 +186,8 @@
       "sha256": "9ddd193c23767669330df2db2c7e6d1a7dc0b392c84fc140dfecf0f5992b324b"
     },
     "tools/check_windows_release.mjs": {
-      "size": 3490,
-      "sha256": "ffef9d9fc60bbd6d84163c28ac6328b2150175e2b098a05ca91c139e155465cc"
+      "size": 6911,
+      "sha256": "70bc9a0d3df0bad0f065839eef3204bfac734b8062e06edb8161a9331f99a31e"
     },
     "tools/desktop_service.py": {
       "size": 21181,
@@ -292,6 +292,10 @@
     "web-public/style.css": {
       "size": 29520,
       "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
+    },
+    "app/src-tauri/windows-hooks.nsh": {
+      "size": 469,
+      "sha256": "53a728514632966419a8e89d3cdece8de7b7bce67bde7c57d3bf16fc34322210"
     }
   }
 }

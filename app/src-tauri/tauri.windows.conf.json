@@ -1,10 +1,11 @@
 {
+  "build": {"beforeBundleCommand": "node package-windows.mjs --capture-compiler"},
   "bundle": {
     "targets": ["nsis"],
     "windows": {
       "allowDowngrades": false,
       "webviewInstallMode": {"type": "offlineInstaller"},
-      "nsis": {"installMode": "currentUser", "languages": ["SimpChinese", "English"], "displayLanguageSelector": false, "startMenuFolder": "AI Memory Lab"}
+      "nsis": {"installerHooks": "windows-hooks.nsh", "compression": "zlib", "installMode": "currentUser", "languages": ["SimpChinese", "English"], "displayLanguageSelector": false, "startMenuFolder": "AI Memory Lab"}
     }
   }
 }

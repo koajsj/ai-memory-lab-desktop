@@ -23,6 +23,61 @@ export async function checkedFile(dir,name,record){
   if(b.length!==record.size||sha256(b)!==record.sha256)throw Error('交付文件大小或哈希不一致');
   return b;
 }
+// Tauri patches bundle-type bytes before makensis, then restores the Cargo
+// output. Record both boundaries; neither digest comes from extracted files.
+export async function captureCompilerInput(executable){
+  const application=await readFile(executable);inspectPE(application);
+  const record={format:'memory-lab.compiler-input.v1',source_commit:process.env.GITHUB_SHA||null,
+    path:path.resolve(executable),size:application.length,sha256:sha256(application)};
+  await writeFile(path.join(path.dirname(executable),'compiler-input.json'),JSON.stringify(record,null,2)+'\n');
+  console.log('Compiler input: '+JSON.stringify(record));
+}
+export async function captureNsisInput(executable,kernel){
+  const compiler=JSON.parse(await readFile(path.join(path.dirname(executable),'compiler-input.json'),'utf8'));
+  if(compiler.format!=='memory-lab.compiler-input.v1'||compiler.path!==path.resolve(executable)
+      ||compiler.source_commit!==(process.env.GITHUB_SHA||null))throw Error('NSIS input与打包前编译记录不一致');
+  for(const file of [executable,kernel]){const stat=await lstat(file);if(!stat.isFile()||stat.isSymbolicLink())throw Error('NSIS输入必须为普通文件');}
+  const application=await readFile(executable),worker=await readFile(kernel);
+  inspectPE(application);inspectPE(worker,true,3);
+  const record={format:'memory-lab.nsis-input.v1',source_commit:compiler.source_commit,
+    application:{path:compiler.path,size:application.length,sha256:sha256(application),compiler_sha256:compiler.sha256,compiler_size:compiler.size},
+    kernel:{path:path.resolve(kernel),size:worker.length,sha256:sha256(worker)}};
+  await writeFile(path.join(path.dirname(executable),'nsis-input.json'),JSON.stringify(record,null,2)+'\n');
+  console.log('NSIS compile input: '+JSON.stringify(record));
+  return record;
+}
+export async function verifyNsisInput(release,kernel,commit){
+  const m=JSON.parse(await readFile(path.join(release,'nsis-input.json'),'utf8'));
+  if(m.format!=='memory-lab.nsis-input.v1'||m.source_commit!==commit)throw Error('NSIS input commit不一致');
+  if(m.application?.path!==path.resolve(release,'ai-memory-lab.exe')||m.kernel?.path!==path.resolve(kernel))throw Error('NSIS input路径不一致');
+  // This check binds the captured, patched bytes to this build's restored output;
+  // it does not rewrite the compiler output or the expected installer digest.
+  await checkedFile(release,'ai-memory-lab.exe',{size:m.application.compiler_size,sha256:m.application.compiler_sha256})
+    .catch(e=>{throw Error('NSIS input与当前compiler编译输出不一致: '+e.message);});
+  await checkedFile(path.dirname(kernel),path.basename(kernel),m.kernel);
+  return m;
+}
+export async function verifyExtractedPayload(dir,payload){
+  const expected=[['ai-memory-lab.exe',payload?.application_size,payload?.application_sha256],
+    ['memory-kernel.exe',payload?.kernel_size,payload?.kernel_sha256]];
+  const found=new Map(expected.map(([n])=>[n,[]]));
+  async function visit(folder){
+    for(const entry of await readdir(folder,{withFileTypes:true})){
+      const file=path.join(folder,entry.name);
+      if(entry.isSymbolicLink())throw Error('Installer payload拒绝链接: '+file);
+      if(entry.isDirectory())await visit(file);
+      else if(found.has(entry.name))found.get(entry.name).push(file);
+    }
+  }
+  await visit(dir);
+  for(const [name,size,digest]of expected){
+    const files=found.get(name);
+    if(files.length!==1)throw Error('Installer payload mismatch: '+name+'; paths='+JSON.stringify(files));
+    try{await checkedFile(path.dirname(files[0]),name,{size,sha256:digest});}
+    catch(e){const b=await readFile(files[0]);throw Error('Installer payload mismatch: '+files[0]+'; expected='+size+'/'+digest+'; actual='+b.length+'/'+sha256(b)+'; '+e.message);}
+    console.log('PASS payload: '+files[0]+'; '+size+' bytes; SHA256='+digest);
+  }
+}
 export async function verifyRelease(dir){
   const m=JSON.parse(await readFile(path.join(dir,'windows-manifest.json'),'utf8'));
   if(m.format!=='memory-lab.windows-release.v1'||m.target!=='x86_64-pc-windows-msvc'
@@ -35,6 +90,7 @@ export async function verifyInstaller(dir){
   const m=JSON.parse(await readFile(path.join(dir,'windows-manifest.json'),'utf8'));
   if(m.format!=='memory-lab.windows-installer.v1'||m.target!=='x86_64-pc-windows-msvc'
       ||m.build_status!=='PASS'||m.installation_status!=='NOT_RUN'||!m.files||Object.keys(m.files).length!==1)throw Error('Windows安装包清单无效');
+  for(const kind of ['application','kernel'])if(!Number.isSafeInteger(m.payload?.[kind+'_size'])||m.payload[kind+'_size']<=0||!/^[a-f0-9]{64}$/.test(m.payload[kind+'_sha256']))throw Error('NSIS载荷登记缺失');
   for(const [n,r]of Object.entries(m.files)){if(!n.endsWith('-setup.exe'))throw Error('安装包文件名无效');inspectPE(await checkedFile(dir,n,r),false);}
   return m;
 }
@@ -55,24 +111,27 @@ async function inspectBuild(){
   execFileSync(process.execPath,[path.join(app,'check-kernel.mjs')],{stdio:'inherit'});
   const km=JSON.parse(await readFile(path.join(app,'src-tauri/binaries/kernel-manifest.json'),'utf8'));
   if(sha256(await readFile(kernel))!==km.sha256)throw Error('发布目录治理内核与登记不一致');
+  const nsisInput=await verifyNsisInput(release,path.join(app,'src-tauri/binaries/memory-kernel-x86_64-pc-windows-msvc.exe'),process.env.GITHUB_SHA||null);
+  if(nsisInput.kernel.sha256!==km.sha256||nsisInput.kernel.size!==km.size)throw Error('NSIS实际sidecar输入与内核登记不一致');
+  if((await lstat(path.join(release,'nsis-input.json'))).mtimeMs>(await lstat(installer)).mtimeMs)throw Error('安装包早于NSIS输入记录');
   const assets=JSON.parse(await readFile(path.join(app,'assets-manifest.json'),'utf8'));
   for(const [n,h]of Object.entries(assets.files)){
     const b=await readFile(path.join(app,n));
     if(sha256(b)!==h||!b.equals(await readFile(path.join(app,'web-dist',n))))throw Error('前端构建资源不一致');
   }
   // 原生构建后的资源应比生成物旧；失败的构建不得复用旧程序打包。
-  const nativeSources=['src-tauri/src/main.rs','src-tauri/src/model_api.rs','src-tauri/src/desktop.rs','src-tauri/binaries/kernel-manifest.json','src-tauri/Cargo.toml','src-tauri/Cargo.lock','src-tauri/tauri.conf.json','src-tauri/tauri.windows.conf.json'];
+  const nativeSources=['src-tauri/src/main.rs','src-tauri/src/model_api.rs','src-tauri/src/desktop.rs','src-tauri/binaries/kernel-manifest.json','src-tauri/Cargo.toml','src-tauri/Cargo.lock','src-tauri/tauri.conf.json','src-tauri/tauri.windows.conf.json','src-tauri/windows-hooks.nsh','package-windows.mjs'];
   const builtAt=Math.min((await lstat(executable)).mtimeMs,(await lstat(installer)).mtimeMs);
   for(const n of [...Object.keys(assets.files),...nativeSources])if((await lstat(path.join(app,n))).mtimeMs>builtAt)throw Error('构建产物早于输入，请先重新原生构建');
-  return {version,release,executable,installer,kernel,km,assets};
+  return {version,release,executable,installer,kernel,km,assets,nsisInput};
 }
 async function collectInstaller(){
-  const {version,executable,installer,kernel,km,assets}=await inspectBuild();
+  const {version,installer,km,assets,nsisInput}=await inspectBuild();
   const target=path.join(app,'ci-artifact');await mkdir(target); // refuse to mix an older run's outputs
   const name=`AI-Memory-Lab-${version}-windows-x64-setup.exe`,bytes=await readFile(installer);
   await copyFile(installer,path.join(target,name));
   const m={format:'memory-lab.windows-installer.v1',version,target:'x86_64-pc-windows-msvc',build_status:'PASS',installation_status:'NOT_RUN',signing:'unsigned',source_commit:process.env.GITHUB_SHA||null,kernel:km,assets:assets.files,
-    payload:{application_sha256:sha256(await readFile(executable)),kernel_sha256:sha256(await readFile(kernel))},files:{[name]:{size:bytes.length,sha256:sha256(bytes)}}};
+    payload:{application_sha256:nsisInput.application.sha256,application_size:nsisInput.application.size,kernel_sha256:nsisInput.kernel.sha256,kernel_size:nsisInput.kernel.size},nsis_input:nsisInput,files:{[name]:{size:bytes.length,sha256:sha256(bytes)}}};
   await writeFile(path.join(target,'windows-manifest.json'),JSON.stringify(m,null,2)+'\n');
   await writeFile(path.join(target,'SHA256SUMS.txt'),sha256(bytes)+'  '+name+'\r\n');
   await copyFile(path.join(app,'QUICKSTART.md'),path.join(target,'QUICKSTART.md'));
@@ -107,7 +166,10 @@ async function packageRelease(runtime){
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
-    if(process.argv[2]==='--ci-installer')await collectInstaller();
+    if(process.argv[2]==='--capture-compiler')await captureCompilerInput(path.join(app,'src-tauri/target/x86_64-pc-windows-msvc/release/ai-memory-lab.exe'));
+    else if(process.argv[2]==='--capture-nsis'&&process.argv[3]&&process.argv[4])await captureNsisInput(path.resolve(process.argv[3]),path.resolve(process.argv[4]));
+    else if(process.argv[2]==='--verify-payload'&&process.argv[3]&&process.argv[4]){const m=await verifyInstaller(path.resolve(process.argv[3]));await verifyExtractedPayload(path.resolve(process.argv[4]),m.payload);}
+    else if(process.argv[2]==='--ci-installer')await collectInstaller();
     else if(process.argv[2]==='--verify-installer'){await verifyInstaller(path.resolve(process.argv[3]));console.log('PASS：安装包普通文件、PE、大小、SHA-256及未验收状态一致。');}
     else if(process.argv[2]==='--verify'){await verifyRelease(path.resolve(process.argv[3]));console.log('PASS：Windows交付文件大小与SHA-256一致；实机状态见验收记录。');}
     else if(process.argv[2]==='--webview-installer'&&process.argv[3])await packageRelease(process.argv[3]);

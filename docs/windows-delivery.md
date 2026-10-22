@@ -23,13 +23,15 @@ python3 -B app/prepare-windows-ci.py --output /新的项目外目录/ai-memory-l
 5. 运行现有 `npm --prefix app run desktop:windows`，产出 unsigned x64 NSIS；WebView2 使用 offlineInstaller，安装过程不要求下载运行时。应用自身不要求评委安装 Python、Node 或开发工具。
 6. 只有此前步骤及安装包/载荷完整性检查全部成功，才上传私有 Artifact，保留14天。下载需拥有私有仓库访问权限；Artifact 是 Actions 的文件传输容器，不是正式比赛 ZIP。
 
-构建使用 npm/pip 下载缓存与按 Rust 工具链、依赖锁文件和源码区分的 Cargo 缓存；测试和安装器共用 release/x64 编译配置。应用代码、资源、Python 内核和最终安装器每次重新生成与核验，不从缓存交付。纯文档推送不会自动构建；同分支新运行会取消过时运行。推送后由仓库所有者确认 Actions 结果，不自动监控或重试。尚无同等条件下的耗时对照，不报告提速比例。
+构建使用 npm/pip/NSIS 下载缓存（后续步骤失败也保存）与按 Windows、Rust 工具链、依赖锁文件和源码区分的 Cargo 缓存；测试和安装器共用 release/x64 编译配置。应用代码、资源、Python 内核和最终安装器每次重新生成与核验，不从缓存交付。纯文档推送不会自动构建；同分支新运行会取消过时运行。推送后由仓库所有者确认 Actions 结果，不自动监控或重试。NSIS 使用 zlib，避免对已压缩的 WebView2 离线安装器进行耗时的 LZMA 重压缩；安装包仍包含完整运行时。没有修复后的同条件耗时对照，不报告提速比例。
 
 原始安装包在 `app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`；核验后的文件在 `app/ci-artifact/`，包含 `AI-Memory-Lab-版本-windows-x64-setup.exe`、`windows-manifest.json`、`SHA256SUMS.txt`、`assets-manifest.json` 和 QUICKSTART。
 
 ```sh
 node app/package-windows.mjs --verify-installer /实际下载解压目录
 ```
+
+Tauri 会在打包前将主程序的 bundle type 从 `UNK` 改为 `NSS`，打包后恢复 Cargo 目录原文件。`beforeBundleCommand` 先记录本次编译输出（`release/compiler-input.json`）；`windows-hooks.nsh` 在 NSIS 编译期、主程序 `File` 指令前记录实际输入的路径、大小和 SHA-256（`release/nsis-input.json`），不在安装时调用 Node。整理器核对该记录与本次恢复后的编译输出、sidecar 源文件及提交一致，再生成交付清单。解包校验分别要求主程序与内核各有唯一文件、大小和哈希完全一致；不会用解包结果反填预期哈希。失败时输出实际路径及预期/实际大小、哈希，便于区分缺失、重复与字节差异。
 
 清单的 `installation_status` 必须保持 NOT_RUN，直到独立记录真实安装验收。文件完整性通过不能证明首次启动或使用体验。为避免旧产物混入，整理器拒绝覆盖已有输出目录。现有便携版整理入口仍保留，但本流程不自动创建便携 ZIP。
 

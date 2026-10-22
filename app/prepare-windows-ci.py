@@ -17,7 +17,7 @@ FILES = ['memory-rules.md', 'requirements-dev.txt', '.github/workflows/windows.y
          'app/prepare-windows-ci.py', 'app/README.md', 'app/QUICKSTART.md',
          'app/THIRD_PARTY_NOTICES.txt', 'app/icon.png', 'app/src-tauri/Cargo.toml',
          'app/src-tauri/Cargo.lock', 'app/src-tauri/build.rs', 'app/src-tauri/tauri.conf.json',
-         'app/src-tauri/tauri.windows.conf.json', 'app/src-tauri/src/main.rs',
+         'app/src-tauri/tauri.windows.conf.json', 'app/src-tauri/windows-hooks.nsh', 'app/src-tauri/src/main.rs',
          'app/src-tauri/src/desktop.rs', 'app/src-tauri/src/model_api.rs',
          'app/src-tauri/icons/icon.png', 'app/src-tauri/icons/icon.ico', 'app/src-tauri/icons/icon.icns',
          'web-public/package.json', 'web-public/package-lock.json', 'web-public/build.mjs',

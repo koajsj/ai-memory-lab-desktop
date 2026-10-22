@@ -23,6 +23,8 @@ python3 -B app/prepare-windows-ci.py --output /新的项目外目录/ai-memory-l
 5. 运行现有 `npm --prefix app run desktop:windows`，产出 unsigned x64 NSIS；WebView2 使用 offlineInstaller，安装过程不要求下载运行时。应用自身不要求评委安装 Python、Node 或开发工具。
 6. 只有此前步骤及安装包/载荷完整性检查全部成功，才上传私有 Artifact，保留14天。下载需拥有私有仓库访问权限；Artifact 是 Actions 的文件传输容器，不是正式比赛 ZIP。
 
+构建使用 npm/pip 下载缓存与按 Rust 工具链、依赖锁文件和源码区分的 Cargo 缓存；测试和安装器共用 release/x64 编译配置。应用代码、资源、Python 内核和最终安装器每次重新生成与核验，不从缓存交付。工作流只手动触发，文档推送不会自动构建；同分支新运行会取消过时运行。推送后由仓库所有者确认 Actions 结果，不自动监控或重试。尚无同等条件下的耗时对照，不报告提速比例。
+
 原始安装包在 `app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`；核验后的文件在 `app/ci-artifact/`，包含 `AI-Memory-Lab-版本-windows-x64-setup.exe`、`windows-manifest.json`、`SHA256SUMS.txt`、`assets-manifest.json` 和 QUICKSTART。
 
 ```sh

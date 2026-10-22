@@ -129,6 +129,17 @@ def test_context_window_keeps_whole_turns_and_persisted_history(service):
     assert p['prompt']['messages'][0]['content']=='消息3'
     assert p['prompt']['messages'][-1]['content']=='继续'
 
+def test_same_turn_delete_scrubs_candidates_without_erasing_later_rebuild(service):
+    exp=finish(service,create(service),candidates=[{'op':'set','key':'preference','value':'应清除的候选原值'},{'op':'delete','key':'preference'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':1,'confirm':True})
+    assert '应清除的候选原值' not in json.dumps(exp['turns'][-1]['candidates'],ensure_ascii=False)
+    exp=finish(service,exp,candidates=[{'op':'set','key':'preference','value':'独立新依据','reactivate':True}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    exp=finish(service,exp,candidates=[])
+    assert exp['turns'][-2]['candidates'][0]['value']=='独立新依据'
+    assert exp['snapshot']['current']['preference']['value']=='独立新依据'
+
 def test_replay_export_accepts_hash_digits_but_not_sensitive_content(tmp_path,monkeypatch):
     from tools import replay as r
     monkeypatch.setattr(r,'ROOT',tmp_path)

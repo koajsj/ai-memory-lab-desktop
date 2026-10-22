@@ -217,7 +217,7 @@
     "memory-rules.md": "e7e5f67421bd50388f4dc4263dbdafb502881b9e23a23a8743789733438c7859",
     "tools/engine.py": "55221f79b195f025b572ca7a34e9e88613827589a6fd61a789f33b29103d760e",
     "tools/governance.py": "7b7628938a1fb707f2613c2992cad149d480addc2415ea03d3360fc983136d54",
-    "tools/desktop_service.py": "c1ca8b8c949477b440ec46e6b043de320559f9ffcba84f434af52800784e0787",
+    "tools/desktop_service.py": "6c16a51dc38668fef60858a988f66ad2975888c0134e80d2e124940a833f08ed",
     "tools/json_input.py": "0a1bab1aec5dd040789a7c3b95898f62cd96987f5bfe908db767423cd830c12f",
     "app/data.js": "7aac9679a5ea5723093ce712f18a716eaef86d9046df92310cb76bf3fab84fdc",
     "web-public/src/public-demo.json": "24a2ba2dc8a5bf05760f9a1fec35f95e216e8c62fda08a6e85332e2c595eb4c6"

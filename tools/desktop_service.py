@@ -178,12 +178,16 @@ class Service:
                 # Scrub controlled replay payloads using the core's actual erased version IDs.
                 erased={r['version_id'] for r in state['governance']['versions'] if r['payload'] is None}
                 erased_keys={r['key'] for r in state['governance']['versions'] if r['version_id'] in erased}
+                newly_erased=erased-set(state.get('scrubbed_versions',[]))
+                candidate_keys={r['key'] for r in state['governance']['versions'] if r['version_id'] in newly_erased}
                 for t in state['turns']:
                     for r in t.get('admission',{}).get('memories',[]):
                         if r['version_id'] in erased:r.update(payload=None,lifecycle='forgotten')
-                    if t is not state['turns'][-1]:
-                        for c in t['candidates']:
-                            if c['key'] in erased_keys:c.pop('value',None);c['erased']=True
+                    for index,c in enumerate(t['candidates']):
+                        if c['key'] in candidate_keys:
+                            c.pop('value',None);c['erased']=True
+                            if str(index) not in t['results']:t['results'][str(index)]={'decisions':[dict(action='REJECT',reason='合法删除已清除此候选；新依据须重新提出')]}
+                state['scrubbed_versions']=sorted(erased)
                 for f in state['frames']:
                     for r in f['governance']['versions']:
                         if r['version_id'] in erased:r.update(payload=None,lifecycle='forgotten')

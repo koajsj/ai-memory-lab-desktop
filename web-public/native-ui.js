@@ -72,6 +72,7 @@ function render(){
  for(const [part,group]of Object.entries(snapshot))for(const [key,p]of Object.entries(group)){const b=button(`${key}：${p.value} · ${root.MemoryModel.states[part]?.name||part}`,()=>{selected=key;details(key,p);const n=currentModel()?.nodes.find(n=>n.key===key);if(n){graph?.select(n.id);graph?.focus(n.id);}});ui.memories.append(b);}
  if(!ui.memories.children.length)ui.memories.append(text('p','本轮没有已保存记忆。模型回复不代表写入成功。'));
  if(selected){let p;for(const group of Object.values(snapshot))p||=group[selected];if(p)details(selected,p);else{selected=null;ui.details.textContent='所选记忆已退出当前快照。';}}
+ else ui.details.replaceChildren();
  graphData();
 }
 function currentModel(){if(!exp?.frames.length)return null;return root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:ui.filter.value});}

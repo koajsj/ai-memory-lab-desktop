@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -55,7 +55,33 @@ fn worker(root: PathBuf, q: Value) -> Result<Value, String> {
         }
         cmd = Command::new(binary);
     }
-    cmd.arg(root)
+    cmd.arg(root);
+    run_worker_command(cmd, q, Duration::from_secs(30))
+}
+fn terminate_worker(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // PyInstaller --onefile uses a child process. Terminate the whole tree
+        // so a timed-out child cannot keep SQLite or inherited pipes open.
+        if let Some(system_root) = std::env::var_os("SystemRoot").map(PathBuf::from).filter(|p| p.is_absolute()) {
+            let _ = Command::new(system_root.join("System32/taskkill.exe"))
+                .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                .creation_flags(0x08000000)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<Value, String> {
+    let input = serde_json::to_vec(&q).map_err(|_| "请求无效")?;
+    if input.len() > 8 * 1024 * 1024 {
+        return Err("请求过大".into());
+    }
+    cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -67,49 +93,64 @@ fn worker(root: PathBuf, q: Value) -> Result<Value, String> {
     let mut child = cmd
         .spawn()
         .map_err(|_| "治理内核无法启动；开发环境请设置MEMORY_LAB_PYTHON")?;
-    let input = serde_json::to_vec(&q).map_err(|_| "请求无效")?;
-    if input.len() > 8 * 1024 * 1024 {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("请求过大".into());
-    }
     let mut stdin = child.stdin.take().ok_or("内核输入不可用")?;
     let stdout = child.stdout.take().ok_or("内核输出不可用")?;
+    // The worker may stop reading stdin. Keep the write inside the same deadline
+    // as process execution so a full OS pipe cannot strand the caller forever.
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
     let reader = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        stdout
-            .take(16 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes)
+        let mut stdout = stdout;
+        let mut chunk = [0; 8192];
+        let mut oversized = false;
+        loop {
+            let count = stdout.read(&mut chunk)?;
+            if count == 0 { break; }
+            if bytes.len() + count > 16 * 1024 * 1024 { oversized = true; }
+            if !oversized { bytes.extend_from_slice(&chunk[..count]); }
+        }
+        Ok::<_, std::io::Error>((bytes, oversized))
     });
-    if stdin.write_all(&input).is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("内核输入失败".into());
-    }
-    drop(stdin);
     let start = Instant::now();
-    loop {
-        if child.try_wait().map_err(|_| "内核状态读取失败")?.is_some() {
-            break;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if start.elapsed() <= timeout => std::thread::sleep(Duration::from_millis(10)),
+            Ok(None) => {
+                terminate_worker(&mut child);
+                // Do not join an inherited pipe held by an unresponsive child.
+                return Err("治理内核超时；请重新打开实验确认保存状态".into());
+            }
+            Err(_) => {
+                terminate_worker(&mut child);
+                return Err("内核状态读取失败".into());
+            }
         }
-        if start.elapsed() > Duration::from_secs(30) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("治理内核超时；请重新打开实验确认保存状态".into());
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let bytes = reader
+    };
+    let write_result = writer.join().map_err(|_| "内核输入任务失败")?;
+    let (bytes, oversized) = reader
         .join()
         .map_err(|_| "内核读取失败")?
         .map_err(|_| "内核输出读取失败")?;
-    if bytes.len() > 16 * 1024 * 1024 {
+    if oversized {
         return Err("实验过大，请导出并新建实验".into());
     }
-    let out: Value = serde_json::from_slice(&bytes).map_err(|_| "内核输出格式无效")?;
+    let out: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        if status.success() { "内核输出格式无效".into() }
+        else { format!("治理内核异常退出（退出码 {:?}）；未返回有效结果", status.code()) }
+    })?;
+    if !status.success() && out["ok"] == true {
+        return Err(format!("治理内核异常退出（退出码 {:?}）；结果未确认", status.code()));
+    }
+    if write_result.is_err() && status.success() {
+        return Err("内核输入失败；结果未确认".into());
+    }
     if out["ok"] != true {
-        return Err(out["error"].as_str().unwrap_or("治理操作失败").into());
+        let message = out["error"].as_str().unwrap_or("");
+        let safe = if matches!(message, "实验达到8MB容量，请导出后新建" | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。") {
+            message.into()
+        } else { "治理操作失败；内核未返回可识别的错误".into() };
+        return Err(if status.success() { safe } else { format!("治理内核退出码 {:?}；{safe}", status.code()) });
     }
     Ok(out["result"].clone())
 }
@@ -385,6 +426,38 @@ pub async fn export_experiment(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn blocked_worker_input_obeys_deadline() {
+        let mut command = if cfg!(windows) {
+            let mut c = Command::new("powershell.exe");
+            c.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 20"]);
+            c
+        } else {
+            let mut c = Command::new("/bin/sleep");
+            c.arg("20");
+            c
+        };
+        command.current_dir(std::env::temp_dir());
+        let started = Instant::now();
+        let result = run_worker_command(command, json!({"padding":"x".repeat(4 * 1024 * 1024)}), Duration::from_millis(400));
+        assert!(result.unwrap_err().contains("超时"));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+    #[test]
+    fn failed_worker_exit_is_not_reported_as_valid_json() {
+        let mut command = if cfg!(windows) {
+            let mut c = Command::new("cmd.exe");
+            c.args(["/C", "exit 7"]);
+            c
+        } else {
+            let mut c = Command::new("/bin/sh");
+            c.args(["-c", "exit 7"]);
+            c
+        };
+        command.current_dir(std::env::temp_dir());
+        let error = run_worker_command(command, json!({"op":"list"}), Duration::from_secs(5)).unwrap_err();
+        assert!(error.contains("退出码 Some(7)"));
+    }
     #[tokio::test]
     async fn failed_profile_commit_restores_previous_credential() {
         let secret = std::cell::Cell::new("previous");

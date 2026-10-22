@@ -134,8 +134,8 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "app/src-tauri/src/desktop.rs": {
-      "size": 16436,
-      "sha256": "88faad4985751eed939e7e136a41901eb020a5ea49d11e98329f9d290fe67b68"
+      "size": 20059,
+      "sha256": "abe4d62936635c4fb025399f9f534e0403097ee8314bc9f2fb549648e318abae"
     },
     "app/src-tauri/src/main.rs": {
       "size": 2953,
@@ -166,8 +166,8 @@
       "sha256": "9651b00eb6b73fe34a9a8b644c25d7f654610288b0e1b4fc838b1c033bae5196"
     },
     "docs/windows-delivery.md": {
-      "size": 5902,
-      "sha256": "99d610142e81d6f5ebe63d85027c1f1185da15f2536a186e9e16342090b0dee7"
+      "size": 5965,
+      "sha256": "8116a9a4fdc3114fd690c80d43fe9971a83817646eb5594f58a85075c9e4b44d"
     },
     "memory-rules.md": {
       "size": 15697,

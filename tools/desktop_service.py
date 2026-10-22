@@ -66,11 +66,36 @@ class Service:
         if not isinstance(v,str) or not re.fullmatch('[a-f0-9]{32}',v):raise ValueError('实验标识无效')
         return v
 
+    def _check_core(self,state,blob,ident):
+        if not blob:raise ValueError('实验内核损坏或缺失')
+        digest=hashlib.sha256(blob).hexdigest()
+        if 'core_sha256' in state:
+            if state['core_sha256']!=digest:raise ValueError('实验内核与保存状态不一致')
+            return
+        # Older experiments predate the digest. Check their actual core against
+        # the catalog before allowing an edit; never silently rebuild an empty core.
+        with TemporaryDirectory(prefix='memory-core-check-') as tmp:
+            path=Path(tmp).resolve()/'core.sqlite';path.write_bytes(blob)
+            with Store(path) as store:
+                scope_id='experiment/'+ident.translate(str.maketrans('0123456789abcdef','abcdefghijklmnop'))
+                ctx=Context('owner',state['role'],True,conversation=scope_id)
+                if store.read(ctx,ctx.role)!=state.get('snapshot') or store.export_governance(ctx)!=state.get('governance'):
+                    raise ValueError('实验内核与保存状态不一致')
+
     def call(self,q):
         if not isinstance(q,dict):raise ValueError('请求格式无效')
         op=q.get('op')
         if op=='validate_candidates':return candidates(q.get('candidates'))
-        if op=='list':return [dict(id=i,name=json.loads(s)['name'],revision=json.loads(s)['revision']) for i,s in self.db.execute('SELECT id,state FROM experiments ORDER BY rowid DESC')]
+        if op=='list':
+            entries=[]
+            for ident,raw in self.db.execute('SELECT id,state FROM experiments ORDER BY rowid DESC'):
+                try:
+                    saved=parse_json(raw)
+                    if not isinstance(saved,dict) or not isinstance(saved['name'],str) or type(saved['revision']) is not int:raise ValueError('实验目录字段损坏')
+                    entries.append(dict(id=ident,name=saved['name'],revision=saved['revision']))
+                except (ValueError,KeyError,TypeError):
+                    entries.append(dict(id=ident,name='损坏的实验 · 无法打开',revision=None))
+            return entries
         if op=='profiles':return [json.loads(r[0]) for r in self.db.execute('SELECT data FROM profiles ORDER BY rowid')]
         if op in ('profile_save','profile_delete'):
             ident=self._id(q['id'])
@@ -93,9 +118,18 @@ class Service:
             if not row:raise ValueError('实验不存在')
             state=parse_json(row[0]);blob=row[1]
             if state.get('format')!=FORMAT or state.get('engine')!='python-store.v3' or state.get('mode')!='MODEL_EXPERIMENT' or state.get('id')!=ident or state.get('role')!='LOCAL' or hashlib.sha256(state['rules']['text'].encode()).hexdigest()!=state['rules']['sha256']:raise ValueError('实验格式、角色或守则快照校验失败')
+            self._check_core(state,blob,ident)
             if op not in ('open','export','remove') and q.get('revision')!=state['revision']:raise ValueError('状态版本已变化，请重新打开实验')
             if op=='remove':
-                with self.db:self.db.execute('DELETE FROM experiments WHERE id=?',(ident,))
+                if q.get('revision')!=state['revision']:raise ValueError('状态版本已变化，请重新打开实验')
+                try:
+                    self.db.execute('BEGIN IMMEDIATE')
+                    current=self.db.execute('SELECT state FROM experiments WHERE id=?',(ident,)).fetchone()
+                    if not current or json.loads(current[0])['revision']!=q['revision']:raise ValueError('并发状态已变化，请重新打开实验')
+                    self.db.execute('DELETE FROM experiments WHERE id=?',(ident,))
+                    self.db.commit()
+                except Exception:
+                    self.db.rollback();raise
                 return True
             if op=='export':
                 sections=q.get('sections')
@@ -211,6 +245,7 @@ class Service:
                                 if (key.removesuffix('__previous'),group[key]['version']) in erased_revisions:del group[key]
                 state['revision']+=1
             blob=path.read_bytes()
+        state['core_sha256']=hashlib.sha256(blob).hexdigest()
         # Optimistic CAS is repeated under the catalog write lock, across processes.
         encoded=json.dumps(state,ensure_ascii=False)
         if len(encoded.encode('utf-8'))>8*1024*1024:raise ValueError('实验达到8MB容量，请导出后新建')

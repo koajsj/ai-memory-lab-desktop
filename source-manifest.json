@@ -6,16 +6,16 @@
       "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
     },
     ".github/workflows/windows.yml": {
-      "size": 10601,
-      "sha256": "e9b2ba2ca3dd40c7c8c7f8945de892c8654205dad5f535036374c5c71809ef78"
+      "size": 12316,
+      "sha256": "4936979bd3a69517c49825be17a3cdcb05d7c5ea95755c46c337528925fd6ce6"
     },
     ".gitignore": {
       "size": 272,
       "sha256": "d694d48d4206eed916178109e9189fdbb5f23f907c808875c1529024e183470a"
     },
     "README.md": {
-      "size": 502,
-      "sha256": "584831ad3c4909a17f0315a2a026db31b81eefe016cc9b28e5843d7dd0fb5565"
+      "size": 645,
+      "sha256": "fa34b005569307ad99ff58d8cd3cd39ce7a4a7efae7e51d27ae964f689292efe"
     },
     "app/QUICKSTART.md": {
       "size": 2516,
@@ -51,7 +51,7 @@
     },
     "app/evaluation.json": {
       "size": 4651,
-      "sha256": "3ca2f7b1ebc9da1bb8fba6f28d49800767cc414b9a33c775af4f95837e2bdc1c"
+      "sha256": "9e139c41d5f91235f45496caab7c55778a3a75c3a01b99c5741eb5a231a6045d"
     },
     "app/icon.png": {
       "size": 316400,
@@ -70,28 +70,28 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "app/native-ui.js": {
-      "size": 24068,
-      "sha256": "33c05dd1dd4f8d65c49bf78ae3c2c025ecf78bf70202c0b6bd29e3fce607acc9"
+      "size": 24647,
+      "sha256": "3bb71d38d6f6016ad0f37b2c74ebfb6e9bac65866acd17b37c95b02363d17cce"
     },
     "app/package-lock.json": {
       "size": 22022,
       "sha256": "5ee689c3463d2d14f2b2fe75b395e1669f19e225d3131f9d8f30e3b7376b431d"
     },
     "app/package-windows.mjs": {
-      "size": 16046,
-      "sha256": "12303fabda6067152faaa053f9e481c3e94943436aa7bd56074e6da7d43ab834"
+      "size": 16735,
+      "sha256": "051ffee7c120e1c7f4e837908b6104f476ef9f22208b1d905f78640a55aab17b"
     },
     "app/package.json": {
-      "size": 971,
-      "sha256": "a6c33a11e7fd7b84f2c74ca01d22efe90d888d785c00cd8a399b7702d5b00c44"
+      "size": 912,
+      "sha256": "758e199cea789bc0147e65a46ed853f7a967c0c3860536559ebaec202da18e98"
     },
     "app/platform.js": {
       "size": 810,
       "sha256": "37e23324d22a5431bc141c576ecc8411ede4fc97d012ba1d1bff74b058949241"
     },
     "app/prepare-windows-ci.py": {
-      "size": 6240,
-      "sha256": "9403cc5c2b6c06dfcb71345b0de8502297067c31652f666a7772522a04b86654"
+      "size": 6744,
+      "sha256": "6c364bd27c2eff11ba4a4458f8f0d0721b0df021aa345b8226e8c15b8dd398a8"
     },
     "app/sandbox.js": {
       "size": 20484,
@@ -166,8 +166,8 @@
       "sha256": "9651b00eb6b73fe34a9a8b644c25d7f654610288b0e1b4fc838b1c033bae5196"
     },
     "docs/windows-delivery.md": {
-      "size": 5604,
-      "sha256": "8f9c3b620f987d81e036a8c8cbf2df0090972c5c8dce3ec1139ae40d3fc025c3"
+      "size": 5902,
+      "sha256": "99d610142e81d6f5ebe63d85027c1f1185da15f2536a186e9e16342090b0dee7"
     },
     "memory-rules.md": {
       "size": 15697,
@@ -178,20 +178,20 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 18011,
-      "sha256": "cd7343636cbd59b34f31346f02f27237fe354feb0a45638e18c36327d904a44b"
+      "size": 20863,
+      "sha256": "b973bb94c4603b3346eacc96d7ed745b51beacfa45d91e768da3b671afa312ed"
     },
     "tools/check_native_worker.py": {
       "size": 3806,
       "sha256": "9ddd193c23767669330df2db2c7e6d1a7dc0b392c84fc140dfecf0f5992b324b"
     },
     "tools/check_windows_release.mjs": {
-      "size": 6911,
-      "sha256": "70bc9a0d3df0bad0f065839eef3204bfac734b8062e06edb8161a9331f99a31e"
+      "size": 7585,
+      "sha256": "e7bc37eb237e26687263d6199449b5d77138e883b701c07683545019943c86e7"
     },
     "tools/desktop_service.py": {
-      "size": 21181,
-      "sha256": "1629140f087ebe0a28532ac248a4971f0c0ba0f367f626a1849d8e13bc6cf34e"
+      "size": 23387,
+      "sha256": "ba6f7986d0003e1bf638e2cd1cfef193705c90bacde401ac02a69d051736ef0f"
     },
     "tools/engine.py": {
       "size": 23048,
@@ -218,8 +218,8 @@
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 13748,
-      "sha256": "83da403ed99419a23bc1ec620f4bc4881cc5e01c2b4a1924a009517783f13c79"
+      "size": 14134,
+      "sha256": "77096fc29013f2ee4c741d9e4a93631f881396e4708e7044b71ddcd92de90750"
     },
     "web-public/check-sandbox.mjs": {
       "size": 15807,
@@ -250,8 +250,8 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "web-public/native-ui.js": {
-      "size": 24068,
-      "sha256": "33c05dd1dd4f8d65c49bf78ae3c2c025ecf78bf70202c0b6bd29e3fce607acc9"
+      "size": 24647,
+      "sha256": "3bb71d38d6f6016ad0f37b2c74ebfb6e9bac65866acd17b37c95b02363d17cce"
     },
     "web-public/package-lock.json": {
       "size": 14868,

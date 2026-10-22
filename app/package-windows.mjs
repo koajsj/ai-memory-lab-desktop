@@ -94,6 +94,14 @@ export async function verifyInstaller(dir){
   for(const [n,r]of Object.entries(m.files)){if(!n.endsWith('-setup.exe'))throw Error('安装包文件名无效');inspectPE(await checkedFile(dir,n,r),false);}
   return m;
 }
+export async function verifyPublishableInstaller(dir,commit){
+  const m=await verifyInstaller(dir);
+  if(!/^[a-f0-9]{40}$/.test(commit)||m.source_commit!==commit)throw Error('发布安装包来源提交不一致');
+  const [name,record]=Object.entries(m.files)[0];
+  const sums=(await readFile(path.join(dir,'SHA256SUMS.txt'),'utf8')).replaceAll('\r\n','\n');
+  if(sums!==`${record.sha256}  ${name}\n`)throw Error('发布校验文件与已验证安装包不一致');
+  return m;
+}
 const app=path.dirname(fileURLToPath(import.meta.url));
 function powershell(script,env={}){
   execFileSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop'; "+script],{stdio:'inherit',env:{...process.env,...env}});
@@ -171,6 +179,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
     else if(process.argv[2]==='--verify-payload'&&process.argv[3]&&process.argv[4]){const m=await verifyInstaller(path.resolve(process.argv[3]));await verifyExtractedPayload(path.resolve(process.argv[4]),m.payload);}
     else if(process.argv[2]==='--ci-installer')await collectInstaller();
     else if(process.argv[2]==='--verify-installer'){await verifyInstaller(path.resolve(process.argv[3]));console.log('PASS：安装包普通文件、PE、大小、SHA-256及未验收状态一致。');}
+    else if(process.argv[2]==='--verify-publishable'){await verifyPublishableInstaller(path.resolve(process.argv[3]),process.argv[4]);console.log('PASS：待发布安装包、提交与SHA256SUMS一致。');}
     else if(process.argv[2]==='--verify'){await verifyRelease(path.resolve(process.argv[3]));console.log('PASS：Windows交付文件大小与SHA-256一致；实机状态见验收记录。');}
     else if(process.argv[2]==='--webview-installer'&&process.argv[3])await packageRelease(process.argv[3]);
     else throw Error('用法：node package-windows.mjs --webview-installer <微软x64离线安装器>；或 --verify <交付目录>');

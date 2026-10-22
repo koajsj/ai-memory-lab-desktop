@@ -55,6 +55,10 @@ def export(destination):
         shutil.copyfile(destination / 'web-public' / name, target)
     html = destination / 'app/index.html'
     html.write_text(html.read_text(encoding='utf-8').replace("connect-src 'none'", 'connect-src ipc: http://ipc.localhost'), encoding='utf-8')
+    package = destination / 'app/package.json'
+    settings = json.loads(package.read_text(encoding='utf-8'))
+    settings['scripts']['check'] = 'node sync-frontend.mjs --check && npm --prefix ../web-public run check && node ../tools/check_windows_release.mjs'
+    package.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     (destination / 'app/data.js').write_text('window.REPLAY_DATA=' + json.dumps(demo, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c') + ';\n', encoding='utf-8')
     report = json.loads((destination / 'web-public/evaluation.json').read_text(encoding='utf-8'))
     inputs = ['memory-rules.md', 'tools/engine.py', 'tools/governance.py', 'tools/desktop_service.py',
@@ -64,7 +68,7 @@ def export(destination):
     (destination / 'app/evaluation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     (destination / '.gitignore').write_text('node_modules/\n__pycache__/\n.pytest_cache/\napp/src-tauri/target/\napp/src-tauri/gen/\napp/src-tauri/binaries/\napp/web-dist/\napp/graph.bundle.js\napp/assets-manifest.json\napp/releases/\napp/ci-artifact/\nweb-public/dist/\nweb-public/graph.bundle.js\nweb-public/data.js\n*.log\n.env*\n', encoding='utf-8')
     (destination / '.gitattributes').write_text('* text=auto eol=lf\n*.png binary\n*.ico binary\n*.icns binary\n', encoding='utf-8')
-    (destination / 'README.md').write_text('# AI Memory Lab · private desktop build\n\nWindows native CI source. The bundled ATLAS_DEMO is an independent SIMULATED dataset.\nNo official competition inputs, private memories, platform logs, credentials or prebuilt binaries are included.\n\nPush build-related changes to main, or run **Actions → Windows native build → Run workflow**. Verified installers are retained as private workflow artifacts for 14 days; no Release is created. See [Windows build and verification](docs/windows-delivery.md).\n', encoding='utf-8')
+    (destination / 'README.md').write_text('# AI Memory Lab · private desktop build\n\nWindows native CI source. The bundled ATLAS_DEMO is an independent SIMULATED dataset.\nNo official competition inputs, private memories, platform logs, credentials or prebuilt binaries are included.\n\nPush build-related changes to main, or run **Actions → Windows native build → Run workflow**. A successful main build publishes its verified unsigned Windows installer and SHA-256 file in a private Release; manual runs retain a private workflow artifact for 14 days. Windows installation and real model use require separate acceptance. See [Windows build and verification](docs/windows-delivery.md).\n', encoding='utf-8')
     listing = {p.relative_to(destination).as_posix(): {'size': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
                for p in sorted(destination.rglob('*')) if p.is_file()}
     (destination / 'source-manifest.json').write_text(json.dumps({'format': 'memory-lab.private-source.v1', 'files': listing}, indent=2) + '\n', encoding='utf-8')

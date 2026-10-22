@@ -54,6 +54,49 @@ def test_stale_finish_cancel_and_atomic_failure(service):
     service.db.execute('DROP TRIGGER fail')
     assert service.call({'op':'open','id':exp['id']})==old
 
+def test_damaged_core_cannot_be_opened_or_replace_saved_memory(service):
+    exp=finish(service,create(service))
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    original=service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()
+    service.db.execute('UPDATE experiments SET core=? WHERE id=?',(b'',exp['id']))
+    service.db.commit()
+    with pytest.raises(ValueError,match='内核|损坏|不一致'):
+        service.call({'op':'open','id':exp['id']})
+    with pytest.raises(ValueError,match='内核|损坏|不一致'):
+        service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'不能覆盖'})
+    assert service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()==(original[0],b'')
+
+def test_stale_window_cannot_delete_newer_experiment(service):
+    exp=create(service)
+    updated=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'较新的名称'})
+    with pytest.raises(ValueError,match='版本|并发'):
+        service.call({'op':'remove','id':exp['id'],'revision':exp['revision']})
+    assert service.call({'op':'open','id':exp['id']})==updated
+
+def test_older_experiment_without_core_digest_is_checked_before_upgrade(service):
+    exp=finish(service,create(service))
+    state,core=service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()
+    old=json.loads(state);del old['core_sha256']
+    service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(old,ensure_ascii=False),exp['id']))
+    service.db.commit()
+    assert service.call({'op':'open','id':exp['id']})==old
+    upgraded=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'兼容旧实验'})
+    assert upgraded['core_sha256'] and upgraded['name']=='兼容旧实验'
+    service.db.execute('UPDATE experiments SET state=?,core=? WHERE id=?',(json.dumps(old,ensure_ascii=False),b'',exp['id']))
+    service.db.commit()
+    with pytest.raises(ValueError,match='内核|损坏|不一致'):
+        service.call({'op':'open','id':exp['id']})
+    assert service.db.execute('SELECT core FROM experiments WHERE id=?',(exp['id'],)).fetchone()[0]==b''
+
+def test_corrupt_catalog_entry_does_not_hide_other_experiments(service):
+    good=create(service);broken=create(service)
+    service.db.execute('UPDATE experiments SET state=? WHERE id=?',('{broken',broken['id']))
+    service.db.commit()
+    listed=service.call({'op':'list'})
+    assert any(item['id']==good['id'] and item['name']==good['name'] for item in listed)
+    assert any(item['id']==broken['id'] and '损坏' in item['name'] for item in listed)
+    with pytest.raises(ValueError):service.call({'op':'open','id':broken['id']})
+
 def test_validation_export_and_rules_snapshot(service):
     exp=create(service)
     for c in ([{'op':'set','key':'x','value':'v','role':'OTHER'}],[{'op':'set','key':'x','value':'v','source_kind':'owner_direct'}]):
@@ -63,9 +106,9 @@ def test_validation_export_and_rules_snapshot(service):
     out=service.call({'op':'export','id':exp['id'],'sections':['rules','memory']})
     assert 'turns' not in out and out['rules']['text']==exp['rules']['text']
     assert out['mode']=='MODEL_EXPERIMENT'
-    service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'改名'})
+    renamed=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'改名'})
     with pytest.raises(ValueError):service.call({'op':'open','id':'../escape'})
-    service.call({'op':'remove','id':exp['id']})
+    service.call({'op':'remove','id':exp['id'],'revision':renamed['revision']})
     assert not service.call({'op':'list'})
 
 def test_candidate_lineage_and_delete_cascade(service):

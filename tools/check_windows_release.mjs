@@ -37,6 +37,16 @@ try{
   const manifest={payload,format:'memory-lab.windows-installer.v1',target:'x86_64-pc-windows-msvc',build_status:'PASS',installation_status:'NOT_RUN',files:{[name]:{size:installer.length,sha256:sha256(installer)}}};
   await writeFile(path.join(dir,'windows-manifest.json'),JSON.stringify(manifest));
   await verifyInstaller(dir);
+  manifest.source_commit='a'.repeat(40);
+  await writeFile(path.join(dir,'windows-manifest.json'),JSON.stringify(manifest));
+  const sums=path.join(dir,'SHA256SUMS.txt');
+  await writeFile(sums,`${sha256(installer)}  ${name}\r\n`);
+  await packaging.verifyPublishableInstaller(dir,manifest.source_commit);
+  await assert.rejects(()=>packaging.verifyPublishableInstaller(dir,'b'.repeat(40)),/提交/);
+  await writeFile(sums,`${'0'.repeat(64)}  ${name}\r\n`);
+  await assert.rejects(()=>packaging.verifyPublishableInstaller(dir,manifest.source_commit),/校验/);
+  await rm(sums);
+  await assert.rejects(()=>packaging.verifyPublishableInstaller(dir,manifest.source_commit));
   await writeFile(path.join(dir,name),Buffer.from('damaged'));
   await assert.rejects(()=>verifyInstaller(dir));
   // Tauri patches UNK -> NSS while makensis reads the file, then restores UNK.

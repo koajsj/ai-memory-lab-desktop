@@ -11,7 +11,7 @@
     "desktop:windows": "tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --ci --no-sign -- --locked",
     "check:desktop": "node ../tools/check_desktop_assets.mjs",
     "check:windows": "node ../tools/check_windows_release.mjs",
-    "check": "node sync-frontend.mjs --check && node ../tools/check_app.cjs && node ../tools/check_view.mjs && node ../web-public/check-sandbox.mjs && node ../web-public/check-native.mjs",
+    "check": "node sync-frontend.mjs --check && npm --prefix ../web-public run check && node ../tools/check_windows_release.mjs",
     "kernel:build": "python build-kernel.py",
     "kernel:check": "node check-kernel.mjs"
   },

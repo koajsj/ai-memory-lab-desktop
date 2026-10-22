@@ -20,7 +20,7 @@ def main():
     with TemporaryDirectory(prefix='memory-kernel-build-') as tmp:
         tmp=Path(tmp);entry=tmp/'entry.py'
         entry.write_text('from tools.desktop_service import main\nraise SystemExit(main())\n',encoding='utf-8')
-        subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--console','--name','memory-kernel','--paths',str(ROOT),'--distpath',str(tmp/'dist'),'--workpath',str(tmp/'work'),'--specpath',str(tmp),str(entry)],check=True,cwd=ROOT)
+        subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--onefile','--console','--name','memory-kernel','--paths',str(ROOT),'--distpath',str(tmp/'dist'),'--workpath',str(tmp/'work'),'--specpath',str(tmp),str(entry)],check=True,cwd=ROOT)
         suffix='.exe' if sys.platform=='win32' else ''
         binary=tmp/'dist'/('memory-kernel'+suffix)
         target=out/('memory-kernel-'+host+suffix)

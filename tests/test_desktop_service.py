@@ -1,8 +1,12 @@
 """Desktop boundary: model proposals cannot grant authority; session and core commit together."""
 import json
+import os
 import sqlite3
+import sys
+from pathlib import Path
 import pytest
 from tools.desktop_service import Service
+from tools.check_native_worker import check as check_native_worker
 
 @pytest.fixture
 def service(tmp_path):
@@ -72,6 +76,47 @@ def test_stale_window_cannot_delete_newer_experiment(service):
     with pytest.raises(ValueError,match='版本|并发'):
         service.call({'op':'remove','id':exp['id'],'revision':exp['revision']})
     assert service.call({'op':'open','id':exp['id']})==updated
+
+def test_completed_experiment_removal_is_atomic_and_isolated(service):
+    removed=finish(service,create(service))
+    removed=service.call({'op':'decide','id':removed['id'],'revision':removed['revision'],'index':0,'confirm':True})
+    retained=create(service)
+    service.db.execute("CREATE TRIGGER fail_remove BEFORE DELETE ON experiments BEGIN SELECT RAISE(ABORT,'forced'); END")
+    with pytest.raises(sqlite3.Error):
+        service.call({'op':'remove','id':removed['id'],'revision':removed['revision']})
+    service.db.execute('DROP TRIGGER fail_remove')
+    assert service.call({'op':'open','id':removed['id']})==removed
+    assert service.call({'op':'open','id':retained['id']})==retained
+    assert service.call({'op':'remove','id':removed['id'],'revision':removed['revision']}) is True
+    with pytest.raises(ValueError,match='不存在'):
+        service.call({'op':'open','id':removed['id']})
+    with pytest.raises(ValueError,match='不存在'):
+        service.call({'op':'remove','id':removed['id'],'revision':removed['revision']})
+    assert service.call({'op':'open','id':retained['id']})==retained
+
+@pytest.mark.skipif(os.name=='nt',reason='Windows tests run the actual packaged EXE in CI')
+def test_packaged_worker_check_removes_completed_experiment(tmp_path):
+    wrapper=tmp_path/'memory-kernel'
+    root=Path(__file__).resolve().parents[1]
+    wrapper.write_text(f'#!{sys.executable}\nimport sys\nsys.path.insert(0, {str(root)!r})\nfrom tools.desktop_service import main\nraise SystemExit(main())\n',encoding='utf-8')
+    wrapper.chmod(0o755)
+    check_native_worker(wrapper)
+
+@pytest.mark.skipif(os.name=='nt',reason='Windows tests run the actual packaged EXE in CI')
+def test_packaged_worker_failure_reports_operation_exit_and_safe_streams(tmp_path):
+    wrapper=tmp_path/'memory-kernel'
+    wrapper.write_text(f'#!{sys.executable}\nimport sys\nprint(\'{{"ok":false,"error":"实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。","details":"api-key-SECRET"}}\')\nprint("api-key-SECRET",file=sys.stderr)\nraise SystemExit(7)\n',encoding='utf-8')
+    wrapper.chmod(0o755)
+    with pytest.raises(AssertionError) as caught:
+        check_native_worker(wrapper)
+    message=str(caught.value)
+    assert 'create' in message and '7' in message and '实验操作失败' in message
+    assert 'api-key-SECRET' not in message
+    wrapper.write_text(f'#!{sys.executable}\nprint(\'{{"ok":false,"error":"api-key-SECRET"}}\')\nraise SystemExit(7)\n',encoding='utf-8')
+    with pytest.raises(AssertionError) as caught:
+        check_native_worker(wrapper)
+    assert 'api-key-SECRET' not in str(caught.value)
+    assert 'unrecognized error sha256=' in str(caught.value)
 
 def test_older_experiment_without_core_digest_is_checked_before_upgrade(service):
     exp=finish(service,create(service))

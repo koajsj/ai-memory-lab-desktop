@@ -6,8 +6,8 @@
       "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
     },
     ".github/workflows/windows.yml": {
-      "size": 12316,
-      "sha256": "4936979bd3a69517c49825be17a3cdcb05d7c5ea95755c46c337528925fd6ce6"
+      "size": 12351,
+      "sha256": "c87e1862afa5500126305686fb9c4f754d80d1f4dd21d1713abff893ddedb5e0"
     },
     ".gitignore": {
       "size": 272,
@@ -34,8 +34,8 @@
       "sha256": "81065069382c3b08772e2c2cc10dfebf530527617c3019916cc12eb359b92d0d"
     },
     "app/build-kernel.py": {
-      "size": 2279,
-      "sha256": "094d3a97be2943423f119bea85db840c9fafecccb05c9b7c81aa98922de28fd0"
+      "size": 2269,
+      "sha256": "99bf7cb130de416b985579491e803f656714f520cc8699e812d8d26e198610b2"
     },
     "app/build.mjs": {
       "size": 1745,
@@ -178,12 +178,12 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 20863,
-      "sha256": "b973bb94c4603b3346eacc96d7ed745b51beacfa45d91e768da3b671afa312ed"
+      "size": 23693,
+      "sha256": "a8ac87ca79247bb6e4e677b107eae99730f420323316ded84c15809d0d81d17a"
     },
     "tools/check_native_worker.py": {
-      "size": 3806,
-      "sha256": "9ddd193c23767669330df2db2c7e6d1a7dc0b392c84fc140dfecf0f5992b324b"
+      "size": 5251,
+      "sha256": "b8adcc66dae5d5d74d7279bad4a344cceb45cbded9314886abf951a33f8b2635"
     },
     "tools/check_windows_release.mjs": {
       "size": 7585,

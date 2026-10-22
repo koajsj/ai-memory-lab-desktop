@@ -93,7 +93,8 @@ jobs:
             app/src-tauri/target/x86_64-pc-windows-msvc/release/.fingerprint/
             app/src-tauri/target/x86_64-pc-windows-msvc/release/build/
             app/src-tauri/target/x86_64-pc-windows-msvc/release/deps/
-          key: windows-cargo-v1-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('app/src-tauri/Cargo.lock', 'app/src-tauri/Cargo.toml') }}-${{ hashFiles('app/src-tauri/src/**', 'app/src-tauri/build.rs') }}
+          # App-owned outputs are removed before caching; source-only commits can reuse dependencies.
+          key: windows-cargo-v2-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('app/src-tauri/Cargo.lock', 'app/src-tauri/Cargo.toml') }}
           restore-keys: |
             windows-cargo-v1-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('app/src-tauri/Cargo.lock', 'app/src-tauri/Cargo.toml') }}-
       - name: Invalidate project outputs and install locked dependencies

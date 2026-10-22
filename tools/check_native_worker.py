@@ -1,10 +1,16 @@
 """Exercise the packaged stdio kernel with no Python/Node in its PATH (no GUI or real API)."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
+
+SAFE_ERRORS = {
+    '实验达到8MB容量，请导出后新建',
+    '实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。',
+}
 
 
 def check(binary):
@@ -20,9 +26,21 @@ def check(binary):
         def invoke(request, directory=root):
             proc = subprocess.run([str(binary), str(directory)], input=json.dumps(request, ensure_ascii=False).encode('utf-8'),
                                   capture_output=True, env=env, cwd=tmp, timeout=40)
-            assert proc.returncode == 0, 'worker did not exit successfully'
-            response = json.loads(proc.stdout.decode('utf-8'))
-            assert response['ok'] is True, response.get('error')
+            try:
+                response = json.loads(proc.stdout.decode('utf-8'))
+            except (ValueError,UnicodeError):
+                response = None
+            if proc.returncode != 0 or not isinstance(response,dict) or response.get('ok') is not True:
+                # Never echo arbitrary worker output: tracebacks or malformed output
+                # can contain imported memories or credentials. Keep a fingerprint.
+                if isinstance(response,dict):
+                    error=response.get('error')
+                    safe_error=error if isinstance(error,str) and error in SAFE_ERRORS else f'unrecognized error sha256={hashlib.sha256(str(error).encode()).hexdigest()[:16]}'
+                    stdout=f'ok={response.get("ok") is True}, error={safe_error}'
+                else:
+                    stdout=f'非协议输出 {len(proc.stdout)} bytes, sha256={hashlib.sha256(proc.stdout).hexdigest()[:16]}'
+                stderr=f'{len(proc.stderr)} bytes, sha256={hashlib.sha256(proc.stderr).hexdigest()[:16]}' if proc.stderr else 'empty'
+                raise AssertionError(f'worker op={request.get("op")!r} exit={proc.returncode}; stdout: {stdout}; stderr: {stderr}')
             return response['result']
 
         exp = invoke({'op': 'create', 'name': '原生进程实验', 'rules': '保留来源；候选不得成为确定事实。'})
@@ -50,8 +68,14 @@ def check(binary):
         bad = subprocess.run([str(binary), str(invalid_root)], input=b'{"op":"list"}', capture_output=True, env=env, cwd=tmp, timeout=40)
         assert bad.returncode != 0 or json.loads(bad.stdout.decode('utf-8'))['ok'] is False
         assert invalid_root.read_text(encoding='utf-8') == 'must not overwrite'
-        assert invoke({'op': 'remove', 'id': exp['id']}) is True
+        assert invoke({'op': 'remove', 'id': exp['id'], 'revision': exp['revision']}) is True
         assert invoke({'op': 'list'}) == []
+        try:
+            invoke({'op': 'open', 'id': exp['id']})
+        except AssertionError as error:
+            assert '实验操作失败' in str(error)
+        else:
+            raise AssertionError('已删除实验仍可打开')
     print('PASS: packaged kernel: restricted PATH, UTF-8/spaces, save/reopen/export/delete, cancellation, terminated process recovery and invalid destination; no GUI/API test')
 
 

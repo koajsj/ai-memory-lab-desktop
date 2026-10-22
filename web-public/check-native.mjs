@@ -44,14 +44,14 @@ class El {
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
  async click(){if(this.onclick)await this.onclick();for(const f of this.events.click||[])await f();}
 }
-let currentProfiles=[];let requests=0,dispose=0;
+let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;
 const service=q=>JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;
-const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(){},focus(){},reset(){},dispose(){dispose++;}};
-const win={document:{body:new El('body'),createElement:tag=>new El(tag),getElementById:()=>originalEntry},MemoryModel:globalThis.MemoryModel,MemoryGraph:{GraphView:function(){return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener(){},confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
+const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
+const win={document:{body:new El('body'),createElement:tag=>new El(tag),getElementById:()=>originalEntry},MemoryModel:globalThis.MemoryModel,MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener(){},confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
- if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;return service(args.request);}
- if(command==='save_profile'){currentProfiles=[{id:args.id,...args.profile}];return;}
- if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:'{"candidates":[{"op":"set","key":"preference","value":"简洁回答"}]}',usage:null};}
+ if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;return service(args.request);}
+ if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
+ if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答'}]}),usage:null};}
  if(command==='cancel_model')return;
  throw Error('Unexpected command '+command);
  }}}};
@@ -61,17 +61,52 @@ try{
  const e=name=>elements.get('nl-'+name);
  e('name').value='最小DOM实验';await e('new').click();assert.equal(service({op:'list'}).length,1);
  e('provider').value='Mock';e('protocol').value='openai';e('base').value='http://localhost/v1';e('model').value='test';e('key').value='TEMP_KEY';await e('profile-save').click();assert.equal(e('key').value,'');
+ e('model').value='edited-model';await e('profile-save').click();assert.equal(savedProfileKey,null,'editing metadata with blank key must preserve the existing credential');
  e('input').value='请记住我喜欢简洁回答';e('stream').checked=true;
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
  for(let n=0;n<50&&requests<2;n++)await new Promise(r=>setTimeout(r,5));
  for(let n=0;n<50&&!service({op:'open',id:service({op:'list'})[0].id}).turns.length;n++)await new Promise(r=>setTimeout(r,5));
  await new Promise(r=>setTimeout(r,20));
- const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);
+ const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
  const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);await confirm.click();
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
  await e('memories').children[0].click();assert(e('details').children.length>0);
+ // A current fact and isolated candidate of the same field must select different versions.
+ e('input').value='也许我需要详细回答';await e('composer').onsubmit({preventDefault(){}});
+ for(let n=0;n<100&&service({op:'open',id:rows[0].id}).turns.length<2;n++)await new Promise(r=>setTimeout(r,5));
+ await new Promise(r=>setTimeout(r,20));
+ // Use the actual core to isolate the second proposal, then reopen via the real handler.
+ let conflict=service({op:'open',id:rows[0].id});
+ conflict=service({op:'decide',id:conflict.id,revision:conflict.revision,index:0,confirm:false});
+ e('experiments').value=conflict.id;await e('experiments').onchange();
+ const pendingNode=graphInstance.model.nodes.find(n=>n.part==='pending');
+ assert(pendingNode,'the unconfirmed proposal must have a pending node');
+ await e('memories').children.find(b=>b.textContent.includes('待核实')).click();
+ assert.equal(graphInstance.selected,pendingNode.id,'select the candidate version, not the same-key current fact');
+ e('rules').value='下一实验的新守则草稿';e('name').value='新的名称草稿';e('position').oninput();assert.equal(e('name').value,'新的名称草稿','view refresh must not discard an experiment-name draft');assert.equal(e('rules').value,'下一实验的新守则草稿','view refresh must not discard an unsaved rules draft');
+
+ let historical=service({op:'open',id:rows[0].id});
+ const hp=service({op:'prepare',id:historical.id,revision:historical.revision,input:'明确更正并保留历史',request_id:'history',model:{}});
+ historical=service({op:'finish',id:hp.id,revision:hp.revision,request_id:'history',reply:'样本回复',candidates:[{op:'set',key:'preference',value:'新的长期偏好',archive_old:true,current_correction:true}]});
+ historical=service({op:'decide',id:historical.id,revision:historical.revision,index:0,confirm:true});
+ e('experiments').value=historical.id;await e('experiments').onchange();
+ assert(Object.keys(historical.snapshot.history).length,'fixture must contain a stored history alias: '+JSON.stringify(historical.snapshot));
+ assert(e('memories').children.some(b=>b.textContent.includes('旧版本')),'history list missing: '+e('memories').children.map(b=>b.textContent).join('|'));
+ await e('memories').children.find(b=>b.textContent.includes('旧版本')).click();
+ const evidence=e('details').children.find(x=>x.tag==='details').children.find(x=>x.tag==='pre').textContent;
+ assert(evidence.includes('version_id'),'history aliases must resolve their actual registered evidence');
+ let releaseOpen;holdOpen=new Promise(resolve=>releaseOpen=resolve);
+ e('experiments').value=rows[0].id;const opening=e('experiments').onchange();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(e('new').disabled,true,'opening an experiment must lock competing mutations');
+ releaseOpen();await opening;holdOpen=null;
  e('name').value='新的空实验';await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
+ graphInstance.destroyed=true;graphInstance.options.onUnavailable('WebGL运行失败，请使用二维记忆列表。');
+ e('filter').onchange();
+ assert.equal(e('graph-note').textContent,'WebGL运行失败，请使用二维记忆列表。','rerender must retain the runtime WebGL fallback explanation');
+ assert.equal(e('fit').disabled,true,'camera controls must remain disabled after the renderer is disposed');
+ await e('remove').click();assert.equal(e('policy').textContent,'');assert.equal(e('round').textContent,'尚无对话');assert.equal(e('send').disabled,true);assert.equal(e('details').children.length,0);
  await e('close').click();assert.equal(dispose,1);assert.equal(service({op:'open',id:rows[0].id}).rules.text,'测试守则：候选隔离，明确确认后裁决。');
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');
 }finally{await rm(folder,{recursive:true,force:true});}

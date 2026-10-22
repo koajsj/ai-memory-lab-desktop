@@ -1,5 +1,16 @@
 name: Windows native build
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'web-public/**'
+      - 'tools/**'
+      - 'tests/**'
+      - 'memory-rules.md'
+      - 'requirements-dev.txt'
+      - '.github/workflows/windows.yml'
+      - '!app/**/*.md'
   workflow_dispatch:
 permissions:
   contents: read

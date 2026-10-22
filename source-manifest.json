@@ -6,20 +6,20 @@
       "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
     },
     ".github/workflows/windows.yml": {
-      "size": 9177,
-      "sha256": "3b8b6e661f935c5a30504b748d4dccffe9ea22e80bc89f51ed5cac85f1105923"
+      "size": 9416,
+      "sha256": "a39e5f3410764b6066409625d23ecf10ab5e5e1528163d12aa82125cf6461f5c"
     },
     ".gitignore": {
       "size": 272,
       "sha256": "d694d48d4206eed916178109e9189fdbb5f23f907c808875c1529024e183470a"
     },
     "README.md": {
-      "size": 463,
-      "sha256": "9baa71fdb5c251e1122ec5d9f3e95899f332444b3536d4d0abe726099bfff336"
+      "size": 502,
+      "sha256": "584831ad3c4909a17f0315a2a026db31b81eefe016cc9b28e5843d7dd0fb5565"
     },
     "app/QUICKSTART.md": {
-      "size": 2156,
-      "sha256": "6548663cff8a6a02ed546631827088f91198e1e4c94eb16fae8421493e26f55c"
+      "size": 2384,
+      "sha256": "1d2f338155e872bba99d43965d9314d9316a167a5873fdcdc586bb0a5fabc3db"
     },
     "app/README.md": {
       "size": 5032,
@@ -51,7 +51,7 @@
     },
     "app/evaluation.json": {
       "size": 4651,
-      "sha256": "5e90a3db65a5984111ede286f24dceda6fc746561518ebfd03707b46f6cc43c5"
+      "sha256": "81b133a5c94214b06fe978ddacc569602db0c1a1939297d61203dcb4bfb027b8"
     },
     "app/icon.png": {
       "size": 316400,
@@ -70,8 +70,8 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "app/native-ui.js": {
-      "size": 19722,
-      "sha256": "3dfd6b5dd8794b2056e24b525ce10354113f396dfa8fbf1946d7111a00c78acf"
+      "size": 23224,
+      "sha256": "8447c340162c970ab95d7fc12e3a2d26d5dcf6b5e3b85d208b0260d5e9f302e7"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -90,8 +90,8 @@
       "sha256": "37e23324d22a5431bc141c576ecc8411ede4fc97d012ba1d1bff74b058949241"
     },
     "app/prepare-windows-ci.py": {
-      "size": 6166,
-      "sha256": "b0a7dbbdc476ff0cdab576e30e183770ab136d7bb0fe70bdae81a49228acdc63"
+      "size": 6205,
+      "sha256": "ac97da796d0e4a6533cf18cdde7847a7065de5de3fbbb6d67c8932f7eeac1238"
     },
     "app/sandbox.js": {
       "size": 20484,
@@ -134,16 +134,16 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "app/src-tauri/src/desktop.rs": {
-      "size": 15991,
-      "sha256": "723f76d3e3591849a4692c5c9809108a502ab23cdd44b181e5417aef8f146090"
+      "size": 16436,
+      "sha256": "88faad4985751eed939e7e136a41901eb020a5ea49d11e98329f9d290fe67b68"
     },
     "app/src-tauri/src/main.rs": {
       "size": 2953,
       "sha256": "4870d634bdb3ccad9be72df16e1a1994bc27ef2a512a675f84c9bf161b5a6d2a"
     },
     "app/src-tauri/src/model_api.rs": {
-      "size": 21368,
-      "sha256": "0476194d1f01785238254fd623b790f7b746c868b0b7ccffb610d1fb7d227727"
+      "size": 21881,
+      "sha256": "695fb71bf09c577b1d2bd2fd65548cfcecf0ff0c06d67f633f58d0bd61c56ae9"
     },
     "app/src-tauri/tauri.conf.json": {
       "size": 1384,
@@ -158,16 +158,16 @@
       "sha256": "e98b1f2eaf5203e047228366b5eb203fbb202cbee30ab3f63c435bdb0720f155"
     },
     "app/style.css": {
-      "size": 28430,
-      "sha256": "fee11dfd96aa5730feec23a1c4418f18afbbb6c3a0df0f5115dcec6d099ace57"
+      "size": 29520,
+      "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
     },
     "app/sync-frontend.mjs": {
       "size": 1425,
       "sha256": "9651b00eb6b73fe34a9a8b644c25d7f654610288b0e1b4fc838b1c033bae5196"
     },
     "docs/windows-delivery.md": {
-      "size": 4649,
-      "sha256": "40a0c6f375ea833afb7397f075127f052ed8a66caefa676994485b99194258bc"
+      "size": 4679,
+      "sha256": "c121770b1a7063aaf5b57aeb8e6bc2585dce75fcb3da96ffcd0d025165326101"
     },
     "memory-rules.md": {
       "size": 15697,
@@ -178,8 +178,8 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 11616,
-      "sha256": "9b4472f83e9d3cc99940336fb575e181f3959a84ea1272e88ac7be68e4fccb43"
+      "size": 13793,
+      "sha256": "733c5f452ad4740f9cbf1be160f2f84388faa360c904a31ec4b15ccf2f38be4d"
     },
     "tools/check_native_worker.py": {
       "size": 3806,
@@ -190,16 +190,16 @@
       "sha256": "ffef9d9fc60bbd6d84163c28ac6328b2150175e2b098a05ca91c139e155465cc"
     },
     "tools/desktop_service.py": {
-      "size": 19797,
-      "sha256": "6c16a51dc38668fef60858a988f66ad2975888c0134e80d2e124940a833f08ed"
+      "size": 19978,
+      "sha256": "8f34a77e3ba7dc195f2782336ff55435610fb63c064487c1aa64451aac22e8a9"
     },
     "tools/engine.py": {
       "size": 23048,
       "sha256": "55221f79b195f025b572ca7a34e9e88613827589a6fd61a789f33b29103d760e"
     },
     "tools/governance.py": {
-      "size": 31907,
-      "sha256": "7b7628938a1fb707f2613c2992cad149d480addc2415ea03d3360fc983136d54"
+      "size": 32258,
+      "sha256": "d021af5301e1b67a954bd21713d940ba951004325864d39d37ef59a490b63d1c"
     },
     "tools/json_input.py": {
       "size": 450,
@@ -218,8 +218,8 @@
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 8681,
-      "sha256": "908704cfb1f3854b7d6c743a960ed3728d058fbb3c982aa6e82e67f821e19845"
+      "size": 12710,
+      "sha256": "94b4f36bcd76adc117580a8855f27901bd7e02d44ced950bbb55b83d768f8cce"
     },
     "web-public/check-sandbox.mjs": {
       "size": 15807,
@@ -250,8 +250,8 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "web-public/native-ui.js": {
-      "size": 19722,
-      "sha256": "3dfd6b5dd8794b2056e24b525ce10354113f396dfa8fbf1946d7111a00c78acf"
+      "size": 23224,
+      "sha256": "8447c340162c970ab95d7fc12e3a2d26d5dcf6b5e3b85d208b0260d5e9f302e7"
     },
     "web-public/package-lock.json": {
       "size": 14868,
@@ -290,8 +290,8 @@
       "sha256": "e98b1f2eaf5203e047228366b5eb203fbb202cbee30ab3f63c435bdb0720f155"
     },
     "web-public/style.css": {
-      "size": 28430,
-      "sha256": "fee11dfd96aa5730feec23a1c4418f18afbbb6c3a0df0f5115dcec6d099ace57"
+      "size": 29520,
+      "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
     }
   }
 }

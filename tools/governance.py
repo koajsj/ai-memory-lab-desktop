@@ -215,7 +215,11 @@ class Governance:
                 self.db.execute('DELETE FROM facts WHERE role=? AND key=? AND state=?',(ctx.role,row['key'],row['part']))
             self.db.execute("UPDATE memory_versions SET lifecycle=?,payload=CASE WHEN ? THEN NULL ELSE payload END WHERE version_id=?",
                             ('forgotten' if erase else 'invalidated',erase,vid))
-            self.db.execute("DELETE FROM facts WHERE role=? AND key=? AND state='history'",(ctx.role,row['key']+'__previous'))
+            # A history alias may belong to an independent version of this field.
+            history_key=row['key']+'__previous'
+            history=self.db.execute("SELECT payload FROM facts WHERE role=? AND key=? AND state='history'",(ctx.role,history_key)).fetchone()
+            if history and parse_json(history['payload'])['version']==row['revision']:
+                self.db.execute("DELETE FROM facts WHERE role=? AND key=? AND state='history'",(ctx.role,history_key))
             if not self.db.execute('SELECT 1 FROM facts WHERE role=? AND key=?',(ctx.role,row['key'])).fetchone():
                 seq=self.db.execute('SELECT seq FROM roles WHERE role=?',(ctx.role,)).fetchone()
                 self.db.execute('INSERT OR REPLACE INTO tombstones VALUES(?,?,?)',(ctx.role,row['key'],seq[0] if seq else 0))

@@ -17,7 +17,7 @@ from .json_input import parse_json
 
 FORMAT='memory-lab.model-experiment.v1'
 CANDIDATE_FIELDS={'op','key','value','state','privacy','ttl','expires_at','event_time','archive_old','reactivate','current_correction','kind','due_at','parents'}
-EXTRACTION='''仅从当前用户输入提出记忆操作，不执行操作。返回JSON对象 {"candidates": [...]}，无操作用空数组。每项仅允许 op(set/derive/retire/delete/review)、key(英文小写下划线)、value(最多500字)、state(current/completed/pending/history)、privacy(private/restricted/high)、kind(fact/task/reminder)、event_time/expires_at/due_at(明确ISO日期)、current_correction/reactivate(布尔)、parents(现有版本ID列表)。派生op=derive且parents必须为获准来源。不得生成角色、权限、来源身份。假设、转述、模型回复不是用户确认；不得推断未提供事实。删除、更正、完成、重新建立仅提出建议，由用户确认与内核裁决。'''
+EXTRACTION='''仅从当前用户输入提出记忆操作，不执行操作。返回JSON对象 {"candidates": [...]}，无操作用空数组。每项仅允许 op(set/derive/retire/delete/review)、key(英文小写下划线)、value(最多500字)、state(current/completed/pending/history)、privacy(private/restricted/high)、kind(fact/task/reminder)、event_time/expires_at/due_at(明确ISO日期)、archive_old/current_correction/reactivate(布尔)、parents(现有版本ID列表)。派生op=derive且parents必须为获准来源。不得生成角色、权限、来源身份。假设、转述、模型回复不是用户确认；不得推断未提供事实。删除、更正、完成、重新建立仅提出建议，由用户确认与内核裁决。'''
 
 def short(v,maximum=20000):
     if not isinstance(v,str) or not v.strip() or len(v)>maximum:raise ValueError('文本为空或过长')
@@ -113,6 +113,8 @@ class Service:
                     if not isinstance(model,dict) or set(model)-{'name','protocol','model','base_url'} or any(not isinstance(v,str) or len(v)>2000 for v in model.values()):raise ValueError('模型元数据无效')
                     before_time=store.read(ctx,ctx.role)
                     time_changes=store.expire(ctx,date.today().isoformat())
+                    # Old conversation must not reintroduce facts erased by clock review.
+                    if time_changes:state['context_start']=len(state['turns'])
                     state['pending']=dict(request_id=rid,input=text,model=model,before=before_time,time_changes=time_changes)
                     admission=store.retrieve_for_context(ctx,ctx.role,today=date.today().isoformat())
                     state['pending']['admission']=admission

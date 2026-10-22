@@ -197,14 +197,11 @@ pub async fn save_profile(
     state: tauri::State<'_, Runtime>,
     id: String,
     profile: Profile,
-    key: String,
+    key: Option<String>,
     persist: bool,
 ) -> Result<(), String> {
     identifier(&id)?;
-    model_api::request(&profile, &key, "", &[], false)?;
-    if persist && key.is_empty() {
-        return Err("保存凭据前请填入API Key".into());
-    }
+    model_api::request(&profile, key.as_deref().unwrap_or(""), "", &[], false)?;
     let _gate = state.profiles.lock().await;
     // A fresh temporary configuration works even if the OS keychain is unavailable.
     let rows = service(&app, json!({"op":"profiles"})).await?;
@@ -213,6 +210,18 @@ pub async fn save_profile(
         .ok_or("模型配置列表无效")?
         .iter()
         .any(|p| p["id"] == id);
+    // None edits metadata only; an explicit string replaces the credential.
+    // In particular, a blank field in the editor must not erase a saved key.
+    let Some(key) = key else {
+        if !exists {
+            return Err("模型配置不存在，不能保留旧凭据".into());
+        }
+        service(&app, json!({"op":"profile_save","id":id,"profile":profile})).await?;
+        return Ok(());
+    };
+    if persist && key.is_empty() {
+        return Err("保存凭据前请填入API Key".into());
+    }
     let entry = if persist || exists {
         Some(credential(&id)?)
     } else {

@@ -64,6 +64,16 @@ mod tests {
         }
     }
     #[test]
+    fn anonymous_local_compatible_endpoint_omits_authorization() {
+        let mut profile = p("openai");
+        profile.base_url = "http://localhost:8080/v1".into();
+        let (_, headers, _) = request(&profile, "", "rules", &[], false).unwrap();
+        assert!(
+            headers.is_empty(),
+            "anonymous endpoints must not receive an empty Bearer header"
+        );
+    }
+    #[test]
     fn provider_responses_and_usage() {
         for (protocol, body) in [
             (
@@ -185,7 +195,11 @@ pub fn request(
             );
             (
                 format!("{root}/chat/completions"),
-                vec![("authorization".into(), format!("Bearer {key}"))],
+                if key.is_empty() {
+                    vec![]
+                } else {
+                    vec![("authorization".into(), format!("Bearer {key}"))]
+                },
                 json!({"model":p.model,"messages":ms,"stream":stream}),
             )
         }

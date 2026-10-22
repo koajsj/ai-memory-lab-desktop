@@ -163,3 +163,35 @@ def test_submission_typed_digest_and_new_runtime(tmp_path):
     data['frames']=[{'input':'1234567890123'}]
     (stage/'app/data.js').write_text('window.REPLAY_DATA='+json.dumps(data)+';\n')
     assert any(e.startswith('app/data.js：') for e in inspect(stage))
+
+
+def test_expiry_cannot_reenter_prompt_through_old_chat(service,monkeypatch):
+    from datetime import date
+    class Clock:
+        @staticmethod
+        def today():return date(2098,1,1)
+    monkeypatch.setattr('tools.desktop_service.date',Clock)
+    exp=finish(service,create(service),text='临时安排是周五到场',candidates=[{'op':'set','key':'temporary_plan','value':'周五到场','expires_at':'2099-01-01'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    Clock.today=staticmethod(lambda:date(2100,1,1))
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'request_id':'after-expiry','input':'现在的安排呢','model':{}})
+    assert p['prompt']['allowed']==[]
+    assert p['prompt']['messages']==[{'role':'user','content':'现在的安排呢'}]
+    assert '周五到场' not in p['prompt']['system']
+    # History remains locally auditable; only model context is reset.
+    assert p['turns'][0]['input']=='临时安排是周五到场'
+
+
+def test_clearing_candidate_preserves_independent_archived_fact(service):
+    exp=finish(service,create(service),text='原先的确认事实')
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    exp=finish(service,exp,text='尚未证实的候选')
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':False})
+    exp=finish(service,exp,candidates=[{'op':'set','key':'preference','value':'新的确认事实','current_correction':True,'archive_old':True}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['snapshot']['history']['preference__previous']['value']=='原先的确认事实'
+    assert not exp['snapshot']['pending']
+    exp=finish(service,exp,candidates=[{'op':'delete','key':'preference'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert not exp['snapshot']['current'] and not exp['snapshot']['history']
+    assert all(r['payload'] is None for r in exp['governance']['versions'])

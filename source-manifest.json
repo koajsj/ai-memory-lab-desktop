@@ -182,8 +182,8 @@
       "sha256": "7b945e4dce0f9b86ff441d1b1bacb515abd91d55204ead49832fb6f5b2107de5"
     },
     "tools/check_native_worker.py": {
-      "size": 3722,
-      "sha256": "2d4905b3c46eadc119e198a0eb92ae8e8581ece5e250bea96a6d6396721aa2c4"
+      "size": 3806,
+      "sha256": "9ddd193c23767669330df2db2c7e6d1a7dc0b392c84fc140dfecf0f5992b324b"
     },
     "tools/check_windows_release.mjs": {
       "size": 3490,

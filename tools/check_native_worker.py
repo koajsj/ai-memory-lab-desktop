@@ -10,7 +10,8 @@ from tempfile import TemporaryDirectory
 def check(binary):
     binary = Path(binary).resolve(strict=True)
     env = dict(os.environ)
-    env['PATH'] = str(Path(env['SystemRoot']) / 'System32') if os.name == 'nt' else '/usr/bin:/bin'
+    # os.environ is case-insensitive on Windows; a plain copied dict is not.
+    env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32') if os.name == 'nt' else '/usr/bin:/bin'
     env.pop('PYTHONHOME', None)
     env.pop('PYTHONPATH', None)
     with TemporaryDirectory(prefix='memory-worker-') as tmp:

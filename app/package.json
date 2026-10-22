@@ -1,0 +1,25 @@
+{
+  "name": "ai-memory-lab",
+  "version": "1.1.0",
+  "private": true,
+  "description": "离线三维记忆演化工作台",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "tauri dev",
+    "desktop": "tauri build",
+    "desktop:mac": "npm run desktop && node package-mac.mjs",
+    "desktop:windows": "tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --ci --no-sign -- --locked",
+    "check:desktop": "node ../tools/check_desktop_assets.mjs",
+    "check:windows": "node ../tools/check_windows_release.mjs",
+    "check": "node sync-frontend.mjs --check && node ../tools/check_app.cjs && node ../tools/check_view.mjs && node ../web-public/check-sandbox.mjs && node ../web-public/check-native.mjs",
+    "kernel:build": "python build-kernel.py",
+    "kernel:check": "node check-kernel.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

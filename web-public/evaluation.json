@@ -1,0 +1,216 @@
+{
+  "format": "memory-lab.public-eval.v1",
+  "mode": "SIMULATED",
+  "scope": "独立虚构图册项目；结构化动作及准入断言，不是自然语言模型或平台运行",
+  "executed_at": "2026-10-17T04:20:43.802496+00:00",
+  "summary": {
+    "scenarios": 1,
+    "passed": 1,
+    "failed": 0,
+    "turns": 28
+  },
+  "results": [
+    {
+      "id": "独立虚构图册项目",
+      "status": "PASS",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 2,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 3,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 4,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 5,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 6,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 7,
+          "status": "PASS",
+          "actions": [
+            "NO_CHANGE"
+          ]
+        },
+        {
+          "turn": 8,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 9,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 10,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 11,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 12,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 13,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 14,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 15,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 16,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 17,
+          "status": "PASS",
+          "actions": [
+            "TEMPORARY"
+          ]
+        },
+        {
+          "turn": 18,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 19,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 20,
+          "status": "PASS",
+          "actions": [
+            "RETIRE"
+          ]
+        },
+        {
+          "turn": 21,
+          "status": "PASS",
+          "actions": [
+            "DELETE"
+          ]
+        },
+        {
+          "turn": 22,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 23,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 24,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 25,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 26,
+          "status": "PASS",
+          "actions": [
+            "NO_CHANGE"
+          ]
+        },
+        {
+          "turn": 27,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 28,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        }
+      ]
+    }
+  ]
+}

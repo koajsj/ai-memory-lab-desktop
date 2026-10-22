@@ -1,0 +1,225 @@
+{
+  "format": "memory-lab.public-eval.v1",
+  "mode": "SIMULATED",
+  "scope": "独立虚构图册项目；结构化动作及准入断言，不是自然语言模型或平台运行",
+  "executed_at": "2026-10-17T04:20:43.802496+00:00",
+  "summary": {
+    "scenarios": 1,
+    "passed": 1,
+    "failed": 0,
+    "turns": 28
+  },
+  "results": [
+    {
+      "id": "独立虚构图册项目",
+      "status": "PASS",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 2,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 3,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 4,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 5,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 6,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 7,
+          "status": "PASS",
+          "actions": [
+            "NO_CHANGE"
+          ]
+        },
+        {
+          "turn": 8,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 9,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 10,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 11,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 12,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 13,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 14,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 15,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 16,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 17,
+          "status": "PASS",
+          "actions": [
+            "TEMPORARY"
+          ]
+        },
+        {
+          "turn": 18,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 19,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 20,
+          "status": "PASS",
+          "actions": [
+            "RETIRE"
+          ]
+        },
+        {
+          "turn": 21,
+          "status": "PASS",
+          "actions": [
+            "DELETE"
+          ]
+        },
+        {
+          "turn": 22,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 23,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        },
+        {
+          "turn": 24,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 25,
+          "status": "PASS",
+          "actions": [
+            "UPDATE"
+          ]
+        },
+        {
+          "turn": 26,
+          "status": "PASS",
+          "actions": [
+            "NO_CHANGE"
+          ]
+        },
+        {
+          "turn": 27,
+          "status": "PASS",
+          "actions": [
+            "REJECT"
+          ]
+        },
+        {
+          "turn": 28,
+          "status": "PASS",
+          "actions": [
+            "ADD"
+          ]
+        }
+      ]
+    }
+  ],
+  "inputs": {
+    "memory-rules.md": "e7e5f67421bd50388f4dc4263dbdafb502881b9e23a23a8743789733438c7859",
+    "tools/engine.py": "55221f79b195f025b572ca7a34e9e88613827589a6fd61a789f33b29103d760e",
+    "tools/governance.py": "7b7628938a1fb707f2613c2992cad149d480addc2415ea03d3360fc983136d54",
+    "tools/desktop_service.py": "c1ca8b8c949477b440ec46e6b043de320559f9ffcba84f434af52800784e0787",
+    "tools/json_input.py": "0a1bab1aec5dd040789a7c3b95898f62cd96987f5bfe908db767423cd830c12f",
+    "app/data.js": "7aac9679a5ea5723093ce712f18a716eaef86d9046df92310cb76bf3fab84fdc",
+    "web-public/src/public-demo.json": "24a2ba2dc8a5bf05760f9a1fec35f95e216e8c62fda08a6e85332e2c595eb4c6"
+  }
+}

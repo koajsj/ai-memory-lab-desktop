@@ -1,0 +1,16 @@
+node_modules/
+__pycache__/
+.pytest_cache/
+app/src-tauri/target/
+app/src-tauri/gen/
+app/src-tauri/binaries/
+app/web-dist/
+app/graph.bundle.js
+app/assets-manifest.json
+app/releases/
+app/ci-artifact/
+web-public/dist/
+web-public/graph.bundle.js
+web-public/data.js
+*.log
+.env*

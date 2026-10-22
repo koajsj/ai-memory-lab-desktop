@@ -1,0 +1,10 @@
+{
+  "name": "ai-memory-lab-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Memory Lab 独立虚构场景的静态三维演示",
+  "scripts": {"check": "node check.mjs && node check-sandbox.mjs && node check-native.mjs", "build": "node build.mjs", "check:online": "node check-online.mjs"},
+  "engines": {"node": ">=22"},
+  "dependencies": {"three": "0.186.1"},
+  "devDependencies": {"esbuild": "0.28.2"}
+}

@@ -1,0 +1,353 @@
+//! Desktop integration: fixed Python worker, app-owned SQLite, native network and OS secrets.
+use crate::model_api::{self, Message, Profile, Reply};
+use serde_json::{json, Value};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    sync::Mutex,
+    time::{Duration, Instant},
+};
+use tauri::{ipc::Channel, Manager};
+use tokio::sync::watch;
+
+#[derive(Default)]
+pub struct Runtime {
+    keys: Mutex<HashMap<String, String>>,
+    requests: Mutex<HashMap<String, watch::Sender<bool>>>,
+}
+fn identifier(s: &str) -> Result<(), String> {
+    if s.len() != 32 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("标识无效".into());
+    }
+    Ok(())
+}
+fn credential(id: &str) -> Result<keyring::Entry, String> {
+    identifier(id)?;
+    keyring::Entry::new("AI Memory Lab", id).map_err(|_| "系统凭据存储不可用".into())
+}
+fn worker(root: PathBuf, q: Value) -> Result<Value, String> {
+    let mut cmd;
+    if cfg!(debug_assertions) {
+        cmd = Command::new(std::env::var("MEMORY_LAB_PYTHON").unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "python".into()
+            } else {
+                "python3".into()
+            }
+        }));
+        cmd.args(["-B", "-m", "tools.desktop_service"]);
+        cmd.current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    } else {
+        let binary = std::env::current_exe()
+            .map_err(|_| "无法定位程序")?
+            .parent()
+            .ok_or("程序目录无效")?
+            .join(if cfg!(windows) {
+                "memory-kernel.exe"
+            } else {
+                "memory-kernel"
+            });
+        if !binary.is_file() {
+            return Err("安装缺少治理内核，请使用包含memory-kernel的完整安装器".into());
+        }
+        cmd = Command::new(binary);
+    }
+    cmd.arg(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let mut child = cmd
+        .spawn()
+        .map_err(|_| "治理内核无法启动；开发环境请设置MEMORY_LAB_PYTHON")?;
+    let input = serde_json::to_vec(&q).map_err(|_| "请求无效")?;
+    if input.len() > 8 * 1024 * 1024 {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("请求过大".into());
+    }
+    let mut stdin = child.stdin.take().ok_or("内核输入不可用")?;
+    let stdout = child.stdout.take().ok_or("内核输出不可用")?;
+    let reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout
+            .take(16 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    });
+    if stdin.write_all(&input).is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("内核输入失败".into());
+    }
+    drop(stdin);
+    let start = Instant::now();
+    loop {
+        if child.try_wait().map_err(|_| "内核状态读取失败")?.is_some() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("治理内核超时；请重新打开实验确认保存状态".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let bytes = reader
+        .join()
+        .map_err(|_| "内核读取失败")?
+        .map_err(|_| "内核输出读取失败")?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err("实验过大，请导出并新建实验".into());
+    }
+    let out: Value = serde_json::from_slice(&bytes).map_err(|_| "内核输出格式无效")?;
+    if out["ok"] != true {
+        return Err(out["error"].as_str().unwrap_or("治理操作失败").into());
+    }
+    Ok(out["result"].clone())
+}
+async fn service(app: &tauri::AppHandle, q: Value) -> Result<Value, String> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "数据目录不可用")?;
+    tauri::async_runtime::spawn_blocking(move || worker(root, q))
+        .await
+        .map_err(|_| String::from("内核任务失败"))?
+}
+#[tauri::command]
+pub async fn experiment_call(app: tauri::AppHandle, request: Value) -> Result<Value, String> {
+    if !matches!(
+        request["op"].as_str(),
+        Some(
+            "validate_candidates"
+                | "list"
+                | "create"
+                | "open"
+                | "rename"
+                | "remove"
+                | "prepare"
+                | "finish"
+                | "abort"
+                | "decide"
+                | "dismiss"
+                | "export"
+                | "profiles"
+        )
+    ) {
+        return Err("操作未授权".into());
+    }
+    service(&app, request).await
+}
+#[tauri::command]
+pub fn default_rules() -> String {
+    include_str!("../../../memory-rules.md").into()
+}
+#[tauri::command]
+pub async fn import_rules() -> Result<Option<String>, String> {
+    let selected = rfd::AsyncFileDialog::new()
+        .set_title("导入本实验的记忆守则")
+        .add_filter("Markdown", &["md", "txt"])
+        .pick_file()
+        .await;
+    if let Some(file) = selected {
+        let bytes = file.read().await;
+        if bytes.len() > 400000 {
+            return Err("守则超过400KB".into());
+        }
+        let text = String::from_utf8(bytes).map_err(|_| "守则必须为UTF-8")?;
+        if text.trim().is_empty() {
+            return Err("守则为空".into());
+        }
+        Ok(Some(text))
+    } else {
+        Ok(None)
+    }
+}
+#[tauri::command]
+pub async fn save_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+    id: String,
+    profile: Profile,
+    key: String,
+    persist: bool,
+) -> Result<(), String> {
+    identifier(&id)?;
+    model_api::request(&profile, &key, "", &[], false)?;
+    let entry = credential(&id)?;
+    if persist {
+        if key.is_empty() {
+            return Err("保存凭据前请填入API Key".into());
+        }
+        entry
+            .set_password(&key)
+            .map_err(|_| "系统凭据保存失败；配置未修改")?;
+    } else {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(_) => return Err("旧系统凭据未能移除；配置未修改".into()),
+        }
+    }
+    service(&app, json!({"op":"profile_save","id":id,"profile":profile})).await?;
+    state
+        .keys
+        .lock()
+        .map_err(|_| "凭据状态不可用")?
+        .insert(id, key);
+    Ok(())
+}
+#[tauri::command]
+pub async fn delete_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+    id: String,
+) -> Result<(), String> {
+    match credential(&id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {}
+        Err(_) => return Err("系统凭据删除失败".into()),
+    }
+    state.keys.lock().map_err(|_| "凭据状态不可用")?.remove(&id);
+    service(&app, json!({"op":"profile_delete","id":id})).await?;
+    Ok(())
+}
+#[tauri::command]
+pub fn cancel_model(state: tauri::State<'_, Runtime>, request_id: String) -> Result<(), String> {
+    if request_id.len() > 100 {
+        return Err("请求标识过长".into());
+    }
+    let mut requests = state.requests.lock().map_err(|_| "请求状态不可用")?;
+    if let Some(tx) = requests.get(&request_id) {
+        let _ = tx.send(true);
+    } else {
+        if requests.len() > 64 {
+            requests.retain(|_, tx| !*tx.borrow());
+        }
+        let (tx, _) = watch::channel(true);
+        requests.insert(request_id, tx);
+    }
+    Ok(())
+}
+#[tauri::command]
+pub async fn model_request(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+    id: String,
+    request_id: String,
+    system: String,
+    messages: Vec<Message>,
+    stream: bool,
+    on_delta: Channel<String>,
+) -> Result<Reply, String> {
+    identifier(&id)?;
+    if request_id.len() > 100 {
+        return Err("请求标识过长".into());
+    }
+    let (tx, rx) = watch::channel(false);
+    {
+        let mut requests = state.requests.lock().map_err(|_| "请求状态不可用")?;
+        if requests.get(&request_id).is_some_and(|t| *t.borrow()) {
+            requests.remove(&request_id);
+            return Err("请求已取消".into());
+        }
+        if requests.values().any(|t| !*t.borrow()) {
+            return Err("已有模型请求，请先取消或等待".into());
+        }
+        requests.insert(request_id.clone(), tx);
+    }
+    let result=async {
+ let rows=service(&app,json!({"op":"profiles"})).await?;
+ let row=rows.as_array().and_then(|a|a.iter().find(|p|p["id"]==id)).ok_or("模型配置不存在")?;
+ let profile:Profile=serde_json::from_value(json!({"name":row["name"],"protocol":row["protocol"],"base_url":row["base_url"],"model":row["model"]})).map_err(|_|"模型配置无效")?;
+ let key=state.keys.lock().map_err(|_|"凭据状态不可用")?.get(&id).cloned();
+ let key=match key {Some(k)=>k,None=>match credential(&id)?.get_password(){Ok(k)=>k,Err(keyring::Error::NoEntry)=>String::new(),Err(_)=>return Err("系统凭据读取失败，请重新配置临时Key".into())}};
+ // Do not emit raw deltas that could echo the credential. Buffer a key-length tail.
+ let mut tail=String::new();let mut result=model_api::run(&profile,&key,&system,&messages,stream,|piece|{
+    tail.push_str(piece);if !key.is_empty(){tail=tail.replace(&key,"[凭据已遮去]");}
+    let keep=key.len();if tail.len()>keep {let mut cut=tail.len()-keep;while cut>0&&!tail.is_char_boundary(cut){cut-=1;}if cut>0{let text=tail[..cut].to_string();tail.drain(..cut);let _=on_delta.send(text);}}
+ },rx).await;
+ if let Ok(reply)=&mut result {if !key.is_empty(){reply.text=reply.text.replace(&key,"[凭据已遮去]");}let _=on_delta.send(tail);}result
+ }.await;
+    state
+        .requests
+        .lock()
+        .map_err(|_| "请求状态不可用")?
+        .remove(&request_id);
+    result
+}
+#[tauri::command]
+pub async fn export_experiment(
+    app: tauri::AppHandle,
+    id: String,
+    sections: Vec<String>,
+) -> Result<bool, String> {
+    let result = service(&app, json!({"op":"export","id":id,"sections":sections})).await?;
+    let bytes = serde_json::to_vec_pretty(&result).map_err(|_| "导出编码失败")?;
+    if let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("导出所选实验数据（包含对话时可能含个人信息）")
+        .add_filter("JSON", &["json"])
+        .set_file_name("memory-lab-model-experiment.json")
+        .save_file()
+        .await
+    {
+        if file.file_name().eq_ignore_ascii_case("log.json") {
+            return Err("请勿使用官方日志文件名log.json".into());
+        }
+        file.write(&bytes).await.map_err(|_| "导出写入失败")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn windows_credential_manager_roundtrip_and_cleanup() {
+        // Synthetic test value and unique ID; never read or overwrite a user's entry.
+        let id = format!("{:032x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let entry = credential(&id).unwrap();
+        struct Cleanup(keyring::Entry);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = self.0.delete_credential(); }
+        }
+        let cleanup = Cleanup(entry);
+        cleanup.0.set_password("synthetic-first-value").unwrap();
+        assert_eq!(cleanup.0.get_password().unwrap(), "synthetic-first-value");
+        cleanup.0.set_password("synthetic-updated-value").unwrap();
+        assert_eq!(cleanup.0.get_password().unwrap(), "synthetic-updated-value");
+        cleanup.0.delete_credential().unwrap();
+        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
+    }
+    #[test]
+    fn actual_worker_utf8_save_reopen_and_no_secret_metadata() {
+        let base = std::env::temp_dir().join(format!(
+            "memory-native-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&base).unwrap();
+        let root = std::fs::canonicalize(&base).unwrap();
+        let exp = worker(
+            root.clone(),
+            json!({"op":"create","name":"中文 实验","rules":"规则：保留来源"}),
+        )
+        .unwrap();
+        assert_eq!(exp["name"], "中文 实验");
+        let reopened = worker(root.clone(), json!({"op":"open","id":exp["id"]})).unwrap();
+        assert_eq!(exp, reopened);
+        assert!(worker(root.clone(),json!({"op":"profile_save","id":"a".repeat(32),"profile":{"name":"x","api_key":"never-store"}})).is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+}

@@ -192,8 +192,9 @@ jobs:
           "Tauri application EXE: $($m.payload.application_size)" >> $env:GITHUB_STEP_SUMMARY
           foreach ($f in $m.files.PSObject.Properties) { "Installer: $($f.Value.size); SHA-256: $($f.Value.sha256)" >> $env:GITHUB_STEP_SUMMARY }
           Get-Content app/src-tauri/binaries/kernel-manifest.json -Raw >> $env:GITHUB_STEP_SUMMARY
-          python -B tools/check_native_worker.py app/src-tauri/target/x86_64-pc-windows-msvc/release/memory-kernel.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # The standalone kernel lifecycle already ran before Tauri. The strict
+          # source -> release -> extracted-payload SHA-256 checks above bind that
+          # same tested EXE to this installer; don't repeat its process lifecycle.
       - name: Retain verified installer as private artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

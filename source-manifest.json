@@ -6,8 +6,8 @@
       "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
     },
     ".github/workflows/windows.yml": {
-      "size": 14549,
-      "sha256": "778efb13ccd99016390738320ddafa6b5cec77ee2d5a49a6d730e44c7125a8d7"
+      "size": 14624,
+      "sha256": "a8182fe0c923682fe2816466bdc05139fb41bc79ef61de23a2218b59f32d917d"
     },
     ".gitignore": {
       "size": 291,
@@ -178,8 +178,8 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 25016,
-      "sha256": "ba23da8d8de9bd48a550f51136c9c481de428caddb35473140581113b440521b"
+      "size": 24584,
+      "sha256": "29c3d1e16fae37ef670ca3e853a41941acb20c472f5cc682be2f67f7c4bf4167"
     },
     "tools/check_native_worker.py": {
       "size": 5251,
@@ -222,8 +222,8 @@
       "sha256": "77096fc29013f2ee4c741d9e4a93631f881396e4708e7044b71ddcd92de90750"
     },
     "web-public/check-sandbox.mjs": {
-      "size": 15807,
-      "sha256": "07a40b6f41eeb86c4f24a4df4f0edf5fc62391a8deb28300c5ecf7f1d682687b"
+      "size": 15801,
+      "sha256": "a6e152400aa4c592c4ca07bc0642d9d0bd4594088804c04582be1274f5164077"
     },
     "web-public/check.mjs": {
       "size": 42953,

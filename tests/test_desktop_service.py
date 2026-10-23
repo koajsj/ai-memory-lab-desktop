@@ -20,7 +20,9 @@ def finish(s,exp,text='喜欢短回答',candidates=None):
     return s.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':p['pending']['request_id'],'reply':'这是实际HTTP返回样本','usage':None,'candidates':candidates if candidates is not None else [{'op':'set','key':'preference','value':text}]})
 
 def test_restart_proposals_and_authorization(service):
-    exp=finish(service,create(service))
+    exp=create(service)
+    other=service.call({'op':'create','name':'B','rules':'另一份守则'})
+    exp=finish(service,exp)
     assert not exp['snapshot']['current']
     assert 'api_key' not in json.dumps(exp)
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':False})
@@ -30,6 +32,9 @@ def test_restart_proposals_and_authorization(service):
     assert exp['snapshot']['current']['preference']['value']=='喜欢短回答'
     reopened=Service(service.root).call({'op':'open','id':exp['id']})
     assert reopened==exp
+    assert reopened['rules']['text']=='保留来源，拒绝越权。'
+    assert not service.call({'op':'open','id':other['id']})['snapshot']['current']
+    assert len(reopened['frames'])==len(reopened['turns'])==2
 
 def test_delete_antiresurrection_and_independent_rebuild(service):
     exp=finish(service,create(service))
@@ -70,17 +75,16 @@ def test_damaged_core_cannot_be_opened_or_replace_saved_memory(service):
         service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'不能覆盖'})
     assert service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()==(original[0],b'')
 
-def test_stale_window_cannot_delete_newer_experiment(service):
-    exp=create(service)
-    updated=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'较新的名称'})
-    with pytest.raises(ValueError,match='版本|并发'):
-        service.call({'op':'remove','id':exp['id'],'revision':exp['revision']})
-    assert service.call({'op':'open','id':exp['id']})==updated
-
 def test_completed_experiment_removal_is_atomic_and_isolated(service):
     removed=finish(service,create(service))
     removed=service.call({'op':'decide','id':removed['id'],'revision':removed['revision'],'index':0,'confirm':True})
     retained=create(service)
+    stale=removed['revision']
+    removed=service.call({'op':'rename','id':removed['id'],'revision':removed['revision'],'name':'较新的名称'})
+    assert removed['name']=='较新的名称'
+    with pytest.raises(ValueError,match='版本|并发'):
+        service.call({'op':'remove','id':removed['id'],'revision':stale})
+    assert service.call({'op':'open','id':removed['id']})==removed
     service.db.execute("CREATE TRIGGER fail_remove BEFORE DELETE ON experiments BEGIN SELECT RAISE(ABORT,'forced'); END")
     with pytest.raises(sqlite3.Error):
         service.call({'op':'remove','id':removed['id'],'revision':removed['revision']})
@@ -151,10 +155,7 @@ def test_validation_export_and_rules_snapshot(service):
     out=service.call({'op':'export','id':exp['id'],'sections':['rules','memory']})
     assert 'turns' not in out and out['rules']['text']==exp['rules']['text']
     assert out['mode']=='MODEL_EXPERIMENT'
-    renamed=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'改名'})
     with pytest.raises(ValueError):service.call({'op':'open','id':'../escape'})
-    service.call({'op':'remove','id':exp['id'],'revision':renamed['revision']})
-    assert not service.call({'op':'list'})
 
 def test_candidate_lineage_and_delete_cascade(service):
     exp=finish(service,create(service),text='待核实线索')
@@ -178,14 +179,6 @@ def test_candidate_lineage_and_delete_cascade(service):
     p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'继续','request_id':'next','model':{}})
     assert p['prompt']['allowed']==[]
     assert p['prompt']['messages']==[{'role':'user','content':'继续'}]
-
-def test_rules_immutable_and_independent_experiments(service):
-    a=create(service);b=service.call({'op':'create','name':'B','rules':'另一份守则'})
-    a=finish(service,a)
-    a=service.call({'op':'decide','id':a['id'],'revision':a['revision'],'index':0,'confirm':True})
-    assert not service.call({'op':'open','id':b['id']})['snapshot']['current']
-    assert service.call({'op':'open','id':a['id']})['rules']['text']=='保留来源，拒绝越权。'
-    assert len(a['frames'])==len(a['turns'])==1
 
 def test_generated_numeric_uuid_is_not_misclassified_as_sensitive(service,monkeypatch):
     from types import SimpleNamespace

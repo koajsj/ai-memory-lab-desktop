@@ -36,18 +36,14 @@
   "bundle": {
     "active": true,
     "targets": [
-      "app"
+      "nsis"
     ],
     "icon": [
       "icons/icon.png",
-      "icons/icon.icns",
       "icons/icon.ico"
     ],
     "category": "Education",
     "shortDescription": "离线记忆演化与安全边界展示",
-    "macOS": {
-      "minimumSystemVersion": "13.3"
-    },
     "externalBin": [
       "binaries/memory-kernel"
     ]

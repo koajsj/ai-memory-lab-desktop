@@ -2,8 +2,8 @@
   "format": "memory-lab.private-source.v1",
   "files": {
     ".gitattributes": {
-      "size": 59,
-      "sha256": "fffb37e18880bd7672f6baf5f5e3ac38f0d4375e7967dec8abbc554d0750c6c8"
+      "size": 45,
+      "sha256": "67c8553872a8e7d08366c8ec66767ef13938ea04f749c3bcdbe050c664d340af"
     },
     ".github/workflows/windows.yml": {
       "size": 14539,
@@ -22,8 +22,8 @@
       "sha256": "6b02c355f6048368efe57599952ae26d0570d63750c261bcf3a16c90336e1072"
     },
     "app/README.md": {
-      "size": 6619,
-      "sha256": "d0d1207e85e3466d2d78ebb132631201ddf7f6f4cbfd5dafc3a0a6d9e1280935"
+      "size": 6719,
+      "sha256": "12cfd55ff28d7ce8aa584160baafcdf6902d2752a62857b427da70b17c8c0609"
     },
     "app/THIRD_PARTY_NOTICES.txt": {
       "size": 1251410,
@@ -86,8 +86,8 @@
       "sha256": "37e23324d22a5431bc141c576ecc8411ede4fc97d012ba1d1bff74b058949241"
     },
     "app/prepare-windows-ci.py": {
-      "size": 6784,
-      "sha256": "cdd649390b99f47f8a05d21a2b08d930191c35cef6732f704d5161d1836eef03"
+      "size": 6736,
+      "sha256": "03512d281a19e71ac92421d87ca48a56a748d2ca8ed64942dbc7516c66a7208a"
     },
     "app/sandbox.js": {
       "size": 20484,
@@ -104,10 +104,6 @@
     "app/src-tauri/build.rs": {
       "size": 39,
       "sha256": "487059eaf8a947b80f20a9aacac038a5047b2ad69d2401b827376c67d6fe847f"
-    },
-    "app/src-tauri/icons/icon.icns": {
-      "size": 2177481,
-      "sha256": "25c93178315f775374bad1c0990efb381588fcfc6e7d0044a25cddbfade868b8"
     },
     "app/src-tauri/icons/icon.ico": {
       "size": 99269,
@@ -130,8 +126,8 @@
       "sha256": "695fb71bf09c577b1d2bd2fd65548cfcecf0ff0c06d67f633f58d0bd61c56ae9"
     },
     "app/src-tauri/tauri.conf.json": {
-      "size": 1384,
-      "sha256": "d7bfc1e72e97e2dfcbe50f4bd3a922cb29793de9093a51f2e4bced865ccde5cc"
+      "size": 1301,
+      "sha256": "a3b9b40cb0c61e4c64c2240e3eb20d6f2aba79f6bfdb138820740a5aefac86b7"
     },
     "app/src-tauri/tauri.windows.conf.json": {
       "size": 462,
@@ -186,8 +182,8 @@
       "sha256": "b8adcc66dae5d5d74d7279bad4a344cceb45cbded9314886abf951a33f8b2635"
     },
     "tools/check_windows_release.mjs": {
-      "size": 8991,
-      "sha256": "2a4f6b69944b7947389719d1940788b610d39d3fba1108a844485c61aaeb5bb7"
+      "size": 9776,
+      "sha256": "c1b0e94967e81c4ab31df263294d0e2370dc5ade5f63e022c428041fc5a24b6a"
     },
     "tools/desktop_service.py": {
       "size": 23732,

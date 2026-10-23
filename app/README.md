@@ -47,4 +47,4 @@ npm run desktop:windows
 
 私有仓库的固定模拟数据只维护 `web-public/src/public-demo.json`；桌面 `data.js` 在构建时生成，并与固定演示评估登记逐字节核对，不维护第二份数据源码。历史评估保留原内核哈希，当前内核源码另按 `source-manifest.json` 核验；哈希匹配只证明构建来源，不代表旧评估验证了新实现。
 
-macOS 本地验证可用 `python3 build-kernel.py`，再执行 `npm run desktop -- --no-sign --bundles app -- --locked`；不生成 DMG。Windows 的安装、卸载、升级、凭据库和无开发环境首次启动须在 Windows 11 x64 验收。当前本地 macOS 结果不替代这些检查。人工视觉、文件面板和 GPU 体验独立验收。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。
+桌面仅维护 Windows 交付；macOS 开发机使用前端、Python 和原子检查，不再维护 .app 或 DMG 打包。`web-public`、共享前端及公开仓库的 GitHub Pages 部署继续保留，独立运行 `npm --prefix web-public run check` 和 `npm --prefix web-public run build`。Windows 的安装、卸载、升级、凭据库及无开发环境首次启动仍需 Windows 验收；人工视觉、文件面板和 GPU 体验单独确认。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。

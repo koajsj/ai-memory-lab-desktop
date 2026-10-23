@@ -7,6 +7,15 @@ import * as packaging from '../app/package-windows.mjs';
 import {verifyInputs} from '../app/build.mjs';
 const {inspectPE,checkedFile,verifyRelease,verifyInstaller,sha256}=packaging;
 
+const config=JSON.parse(await readFile(new URL('../app/src-tauri/tauri.conf.json',import.meta.url),'utf8'));
+const windows=JSON.parse(await readFile(new URL('../app/src-tauri/tauri.windows.conf.json',import.meta.url),'utf8'));
+assert.deepEqual(config.bundle.targets,['nsis'],'默认桌面交付应为Windows NSIS');
+assert(!Object.hasOwn(config.bundle,'macOS'),'不再维护macOS桌面交付配置');
+assert.deepEqual(windows.bundle.targets,['nsis']);
+assert.equal(windows.build.beforeBundleCommand,'node package-windows.mjs --capture-compiler');
+assert.equal(windows.bundle.windows.nsis.installerHooks,'windows-hooks.nsh');
+for(const icon of config.bundle.icon){assert(/\.(png|ico)$/.test(icon));assert((await readFile(new URL('../app/src-tauri/'+icon,import.meta.url))).length>0);}
+
 function header(machine=0x8664,magic=0x20b,subsystem=2){
   const b=Buffer.alloc(512);b.write('MZ');b.writeUInt32LE(128,60);b.write('PE\0\0',128);
   b.writeUInt16LE(machine,132);b.writeUInt16LE(0x22,150);b.writeUInt16LE(240,148);

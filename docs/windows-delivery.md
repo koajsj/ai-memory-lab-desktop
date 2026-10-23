@@ -17,13 +17,13 @@ python3 -B app/prepare-windows-ci.py --output /新的项目外目录/ai-memory-l
 工作流在 main 的构建相关文件变更时自动触发，也保留手动 `workflow_dispatch`，并拒绝在公开仓库执行。构建 Job 只读；main 推送的 Windows 构建、测试和安装包核验全部通过后，独立发布 Job 才获得 contents 写权限，从同一次运行的已核验 Artifact 创建私有 Release。手动运行只保留 Artifact，不发布 Release。不签名，也不生成 DMG 或比赛 ZIP。
 
 1. Actions → **Windows native build** → **Run workflow**。
-2. Runner 使用 x64 Node 22、Python 3.12、Rust stable MSVC 和仓库锁文件。Python 构建依赖锁定 PyInstaller 6.16.0、pytest 8.4.2；Windows SDK/MSVC 来自托管 Windows 镜像。
+2. Runner 使用 x64 Node 22、Python 3.12、Rust stable MSVC 和仓库锁文件。在隔离 venv 中安装 PyInstaller 6.16.0、hooks-contrib 2026.9、pytest 8.4.2；Windows SDK/MSVC 来自托管 Windows 镜像。
 3. 执行桌面服务定向测试、公开模拟数据的前端检查、原生网络适配器及 Credential Manager 合成凭据测试。两项仅针对比赛回放/提交文件的 Python 测试不属于私有构建集，仍保留在本地测试文件中。
 4. 在 Windows 重新运行 PyInstaller，检查原生 sidecar 的目标、输入哈希和文件哈希。限制 PATH 后验证独立进程、中文/空格目录、保存恢复、导出删除、取消及异常终止恢复。
-5. 运行现有 `npm --prefix app run desktop:windows`，产出 unsigned x64 NSIS；WebView2 使用 offlineInstaller，安装过程不要求下载运行时。应用自身不要求评委安装 Python、Node 或开发工具。
+5. 运行现有 `npm --prefix app run desktop:windows`，产出 unsigned x64 NSIS；默认 WebView2 使用 embedBootstrapper：已有运行时可离线安装，缺失时联网下载；手动 Run workflow 勾选 offline_installer 可嵌入完整离线运行时。应用自身不要求评委安装 Python、Node 或开发工具。
 6. 只有此前步骤及安装包/载荷完整性检查全部成功，才上传私有 Artifact，保留14天。main 推送随后下载同一 Artifact，复核安装包、提交哈希和 SHA256SUMS，附上安装包与校验文件并创建带运行编号的私有 Release；不重复构建。下载需拥有私有仓库访问权限。
 
-构建使用 npm/pip/NSIS 下载缓存（后续步骤失败也保存）与按 Windows、Rust 工具链和依赖锁文件区分的 Cargo 依赖缓存；测试和安装器共用 release/x64 编译配置。应用自身的编译产物在缓存前移除，源码变更仍会重新编译；资源、Python 内核和最终安装器每次重新生成与核验，不从缓存交付。纯文档推送不会自动构建；同分支新运行会取消过时运行。推送后由仓库所有者确认 Actions 与 Release 结果，不自动监控或重试。NSIS 使用 zlib，避免对已压缩的 WebView2 离线安装器进行耗时的 LZMA 重压缩；安装包仍包含完整运行时。没有修复后的同条件耗时对照，不报告提速比例。
+构建使用 npm/pip/NSIS 下载缓存（后续步骤失败也保存）与按 Windows、Rust 工具链和依赖锁文件区分的 Cargo 依赖缓存；测试和安装器共用 release/x64 编译配置。应用自身的编译产物在缓存前移除，源码变更仍会重新编译；资源、Python 内核和最终安装器每次重新生成与核验，不从缓存交付。纯文档推送不会自动构建；同分支新运行会取消过时运行。推送后由仓库所有者确认 Actions 与 Release 结果，不自动监控或重试。NSIS 使用 zlib，避免对已压缩的 WebView2 离线安装器进行耗时的 LZMA 重压缩；默认安装包不再内嵌完整 WebView2 运行时；离线选项仍保留完整运行时。没有修复后的同条件耗时对照，不报告提速比例。
 
 原始安装包在 `app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`；核验后的文件在 `app/ci-artifact/`，包含 `AI-Memory-Lab-版本-windows-x64-setup.exe`、`windows-manifest.json`、`SHA256SUMS.txt`、`assets-manifest.json` 和 QUICKSTART。
 
@@ -49,3 +49,11 @@ Tauri 会在打包前将主程序的 bundle type 从 `UNK` 改为 `NSS`，打包
 Runner 不会证明干净用户电脑缺少开发工具时的完整 UI 行为，也不代表 Windows 11 人工体验已通过。Actions 日志与产物仅证明各自实际执行的步骤。Windows 未签名安装包可能触发 SmartScreen；不关闭系统防护。卸载沿用 Tauri 默认行为，不添加删除用户无关文件的钩子。
 
 参考：[GitHub Artifact](https://docs.github.com/en/actions/tutorials/store-and-share-data)、[Tauri Windows安装器](https://v2.tauri.app/distribute/windows-installer/)。
+
+## 体积基线与门槛
+
+对 Release `windows-v1.1.0-39798792394-1` 下载文件逐字节校验 SHA256SUMS 后解包：安装包 227,984,954 字节，WebView2 离线安装器 214,156,024 字节，Tauri 主程序 12,593,664 字节，Python onefile 内核 9,373,585 字节。约217 MiB是安装包体积，并非内核体积。
+
+内核归档共68项、120个 Python 模块；未发现 NumPy、PIL、pytest、Tk 或 setuptools。主要解压体积来自 Python DLL 6,945,272 字节、哈希用 libcrypto 5,231,472 字节、SQLite DLL 1,583,608 字节、PYZ 1,412,872 字节、UCRT 1,361,448 字节。这些运行依赖保留，不拆分 onefile 或删除治理功能。
+
+`python app/build-kernel.py --audit /实际/memory-kernel.exe` 输出归档组成；构建清单保存完整内核大小、压缩/解压条目合计、最大条目及模块表。构建和打包前均要求实际内核 EXE **小于50,000,000字节**，超限阻止交付。Runner Summary 分别记录实际内核（含全部Python运行时）、主程序和安装包大小及哈希；新构建体积以本次 Runner 实测为准。未引入 UPX、LTO 或拆分运行时，避免增加启动风险、编译耗时或隐藏总大小。

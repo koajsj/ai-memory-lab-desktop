@@ -12,6 +12,11 @@ on:
       - '.github/workflows/windows.yml'
       - '!app/**/*.md'
   workflow_dispatch:
+    inputs:
+      offline_installer:
+        description: Bundle the full WebView2 runtime for offline first installation
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -76,7 +81,7 @@ jobs:
             ${{ steps.download-paths.outputs.npm }}
             ${{ steps.download-paths.outputs.pip }}
             ${{ steps.download-paths.outputs.nsis }}
-          key: windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('app/package-lock.json', 'web-public/package-lock.json', 'requirements-dev.txt', 'app/build-kernel.py') }}
+          key: windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('app/package-lock.json', 'web-public/package-lock.json', 'requirements-dev.txt', 'app/build-kernel.py', '.github/workflows/windows.yml') }}
           restore-keys: |
             windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-
       - name: Restore Cargo dependencies and compiled libraries
@@ -110,7 +115,11 @@ jobs:
           }
           python --version
           node --version
-          python -m pip install PyInstaller==6.16.0 -r requirements-dev.txt
+          # Build only from an isolated stdlib + pinned packaging/test environment.
+          python -m venv .venv
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "$pwd/.venv/Scripts" >> $env:GITHUB_PATH
+          ./.venv/Scripts/python -m pip install PyInstaller==6.16.0 pyinstaller-hooks-contrib==2026.9 -r requirements-dev.txt
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm ci --prefer-offline --prefix app
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -150,7 +159,21 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build unsigned Windows x64 NSIS installer
         run: |
-          npm --prefix app run desktop:windows
+          if ('${{ inputs.offline_installer }}' -eq 'true') {
+            'MEMORY_LAB_WEBVIEW_MODE=offlineInstaller' >> $env:GITHUB_ENV
+            $override = Join-Path $env:RUNNER_TEMP 'memory-offline-config.json'
+            @{bundle=@{windows=@{webviewInstallMode=@{type='offlineInstaller'}}}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $override
+            # npm's desktop:windows ends in `-- --locked`; append no Tauri flags
+            # after that Cargo separator. Invoke the same CLI with config first.
+            Push-Location app
+            try {
+              & ./node_modules/.bin/tauri.cmd build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --config $override --ci --no-sign -- --locked
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            } finally { Pop-Location }
+          } else {
+            'MEMORY_LAB_WEBVIEW_MODE=embedBootstrapper' >> $env:GITHUB_ENV
+            npm --prefix app run desktop:windows
+          }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify installer, native payload and source hashes
         run: |
@@ -162,6 +185,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node app/package-windows.mjs --verify-payload app/ci-artifact $payload
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $m = Get-Content app/ci-artifact/windows-manifest.json -Raw | ConvertFrom-Json
+          if ($m.payload.kernel_size -ge 50000000) { throw 'Kernel exceeds the 50 MB budget' }
+          "## Windows build sizes (bytes)" >> $env:GITHUB_STEP_SUMMARY
+          "Kernel onefile EXE (entire bundled runtime): $($m.payload.kernel_size)" >> $env:GITHUB_STEP_SUMMARY
+          "Tauri application EXE: $($m.payload.application_size)" >> $env:GITHUB_STEP_SUMMARY
+          foreach ($f in $m.files.PSObject.Properties) { "Installer: $($f.Value.size); SHA-256: $($f.Value.sha256)" >> $env:GITHUB_STEP_SUMMARY }
+          Get-Content app/src-tauri/binaries/kernel-manifest.json -Raw >> $env:GITHUB_STEP_SUMMARY
           python -B tools/check_native_worker.py app/src-tauri/target/x86_64-pc-windows-msvc/release/memory-kernel.exe
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Retain verified installer as private artifact
@@ -236,4 +266,4 @@ jobs:
           gh release create "$tag" "release-input/$installer" release-input/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "AI Memory Lab $version · Windows x64 · build $GITHUB_RUN_ID" \
-            --notes "Unsigned Windows x64 installer from commit $GITHUB_SHA. Automated Windows build, tests, NSIS payload and SHA-256 verification completed in this workflow. Windows desktop installation, real model API and human interaction remain unverified."
+            --notes "Unsigned Windows x64 installer from commit $GITHUB_SHA. Uses installed WebView2; if absent, runtime installation requires internet. Automated Windows build, tests, NSIS payload and SHA-256 verification completed in this workflow. Windows desktop installation, real model API and human interaction remain unverified."

@@ -1,6 +1,6 @@
 # AI Memory Lab · Windows 11 x64
 
-1. 使用通过校验的 NSIS 安装器安装，从开始菜单打开。便携版完整解压后启动 `AI Memory Lab.exe`，确保同目录有 `memory-kernel.exe`；需要 Microsoft WebView2 Runtime。未签名版本可能出现 SmartScreen 提示，不要关闭系统防护。
+1. 使用通过校验的 NSIS 安装器安装，从开始菜单打开。便携版完整解压后启动 `AI Memory Lab.exe`，确保同目录有 `memory-kernel.exe`；需要 Microsoft WebView2 Runtime。默认安装包在缺少运行时时联网安装；已有运行时可离线安装和运行。完全离线的首次安装请使用手动构建的离线安装包。未签名版本可能出现 SmartScreen 提示，不要关闭系统防护。
 2. 左侧“真实模型实验”中配置供应商协议、API 前缀、模型 ID 和 Key，保存后测试连接（会请求所选服务，可能计费）。Key 可临时使用，也可选择系统凭据库存储。编辑已有配置时，Key 留空会保留原凭据；填写新 Key 才会更换。
 3. 导入 UTF-8 Markdown 或粘贴守则，填写实验名并新建。旧实验保存自己的守则和哈希，不会自动换用新文本。
 4. 发送消息，查看实际回复、候选与处理前后记忆。普通候选可隔离保存；本人确认后仍由 Python 内核裁决。模型说“已记住”不等于落库成功。

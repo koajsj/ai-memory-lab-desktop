@@ -37,7 +37,7 @@ npm run check
 npm run desktop:windows
 ```
 
-治理源码改变后必须重新执行 kernel:build。`check-kernel.mjs`核对架构、文件和源码 SHA-256，拒绝使用过期内核。Tauri externalBin 打包 `memory-kernel.exe`；NSIS 为当前用户安装并创建开始菜单入口，包含 WebView2 离线安装器。便携版整理器也包含内核及完整性清单；没有原生构建及实机验收不标记为可交付。不要仅复制主 EXE。
+治理源码改变后必须重新执行 kernel:build。`check-kernel.mjs`核对架构、文件和源码 SHA-256，拒绝使用过期内核。Tauri externalBin 打包 `memory-kernel.exe`；NSIS 为当前用户安装并创建开始菜单入口，默认包含轻量 WebView2 引导器：已有运行时可直接安装，缺失时需联网下载运行时；Actions 手动构建可选完整离线安装器。便携版整理器也包含内核及完整性清单；没有原生构建及实机验收不标记为可交付。不要仅复制主 EXE。
 
 开发模式可设置 `MEMORY_LAB_PYTHON` 为 Python 绝对路径，再运行 `npm run dev`。发布模式只加载同目录已打包内核，不查找系统 Python，不允许前端指定可执行文件或任意数据库路径。Python 以 stdio 调用，不开本地端口；Rust 管理超时、取消、错误和凭据。两端共用 `web-public` 的前端，只有桌面启用真实模型功能。
 

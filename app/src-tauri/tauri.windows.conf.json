@@ -4,7 +4,7 @@
     "targets": ["nsis"],
     "windows": {
       "allowDowngrades": false,
-      "webviewInstallMode": {"type": "offlineInstaller"},
+      "webviewInstallMode": {"type": "embedBootstrapper"},
       "nsis": {"installerHooks": "windows-hooks.nsh", "compression": "zlib", "installMode": "currentUser", "languages": ["SimpChinese", "English"], "displayLanguageSelector": false, "startMenuFolder": "AI Memory Lab"}
     }
   }

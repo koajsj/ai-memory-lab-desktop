@@ -339,3 +339,28 @@ def test_failed_reply_save_keeps_original_pending_state(service):
     recovered=service.call({'op':'abort','id':p['id'],'revision':p['revision'],'request_id':'save-failure','status':'interrupted'})
     assert recovered['pending'] is None and not recovered['snapshot']['current']
     assert recovered['turns'][-1]['status']=='interrupted'
+
+# Packaging budgets apply to the real onefile payload, not a renamed launcher.
+def test_kernel_packaging_budget_and_inventory(tmp_path):
+    import runpy
+    inspect = runpy.run_path(str(Path(__file__).resolve().parents[1]/'app/build-kernel.py'))['archive_inventory']
+    class Archive:
+        def __init__(self, path):
+            self.toc = {'python312.dll': (0, 30, 90, 1, 'b'), 'PYZ.pyz': (30, 20, 20, 0, 'z')}
+        def open_embedded_archive(self, name):
+            return type('PythonArchive', (), {'toc': {'tools.engine': (), 'sqlite3': ()}})()
+    binary = tmp_path/'worker.exe'
+    binary.write_bytes(b'x'*100)
+    report = inspect(binary, reader=Archive)
+    assert report['size'] == 100
+    assert report['compressed_entries_size'] == 50
+    assert report['uncompressed_entries_size'] == 110
+    assert report['container_overhead_size'] == 50
+    assert report['largest_entries'][0]['name'] == 'python312.dll'
+    assert report['python_modules'] == ['sqlite3', 'tools.engine']
+    # Decimal 50 MB, strictly below; don't accept exactly the limit or a missing file.
+    with binary.open('wb') as f: f.truncate(50_000_000)
+    with pytest.raises(ValueError, match='50'):
+        inspect(binary, reader=Archive)
+    with pytest.raises(FileNotFoundError):
+        inspect(tmp_path/'missing.exe', reader=Archive)

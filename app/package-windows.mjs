@@ -138,7 +138,7 @@ async function collectInstaller(){
   const target=path.join(app,'ci-artifact');await mkdir(target); // refuse to mix an older run's outputs
   const name=`AI-Memory-Lab-${version}-windows-x64-setup.exe`,bytes=await readFile(installer);
   await copyFile(installer,path.join(target,name));
-  const m={format:'memory-lab.windows-installer.v1',version,target:'x86_64-pc-windows-msvc',build_status:'PASS',installation_status:'NOT_RUN',signing:'unsigned',source_commit:process.env.GITHUB_SHA||null,kernel:km,assets:assets.files,
+  const m={format:'memory-lab.windows-installer.v1',version,target:'x86_64-pc-windows-msvc',build_status:'PASS',installation_status:'NOT_RUN',signing:'unsigned',source_commit:process.env.GITHUB_SHA||null,webview_install_mode:process.env.MEMORY_LAB_WEBVIEW_MODE||'embedBootstrapper',kernel:km,assets:assets.files,
     payload:{application_sha256:nsisInput.application.sha256,application_size:nsisInput.application.size,kernel_sha256:nsisInput.kernel.sha256,kernel_size:nsisInput.kernel.size},nsis_input:nsisInput,files:{[name]:{size:bytes.length,sha256:sha256(bytes)}}};
   await writeFile(path.join(target,'windows-manifest.json'),JSON.stringify(m,null,2)+'\n');
   await writeFile(path.join(target,'SHA256SUMS.txt'),sha256(bytes)+'  '+name+'\r\n');

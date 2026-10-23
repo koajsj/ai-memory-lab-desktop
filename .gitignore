@@ -14,3 +14,4 @@ web-public/graph.bundle.js
 web-public/data.js
 *.log
 .env*
+.venv/

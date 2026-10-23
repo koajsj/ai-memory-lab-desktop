@@ -8,9 +8,9 @@
 
 支持 OpenAI Chat Completions、Anthropic Messages、Gemini GenerateContent；第三方服务选择 OpenAI 兼容协议，自填模型 ID。Base URL 填 API 前缀，如 `https://api.openai.com/v1`，不包含 `/chat/completions`。HTTPS 为默认要求；自建本机服务可使用 `http://localhost:端口/v1`。不绕过 TLS 验证，不跟随重定向。兼容服务若不支持 SSE，可关闭“流式回复”。
 
-Key 默认仅保留在 Rust 进程内；选中保存时交给系统凭据库（Windows Credential Manager、macOS Keychain）。模型配置只保存非敏感字段。编辑配置时重新填写 Key；不保存 Key 的自建服务可留空。不要在聊天中粘贴凭据。
+Key 默认仅保留在 Rust 进程内；选中保存时交给系统凭据库（Windows Credential Manager、macOS Keychain）。模型配置只保存非敏感字段。编辑配置时 Key 留空保留原凭据；新建不需要 Key 的本机服务可留空。不要在聊天中粘贴凭据。
 
-真实模型实验持久化在系统应用本地数据目录 `local.memorylab.desktop/experiments.sqlite`。每个实验保存守则原文及 SHA-256，旧实验不随新守则改变；“重置为新实验”保留原实验并新建空状态。请求中断后通过“结束上次中断请求并恢复”继续；模型输出和记忆提交分别保存、分别展示。
+真实模型实验持久化在系统应用本地数据目录 `local.memorylab.desktop/experiments.sqlite`。每个实验保存守则原文及 SHA-256，旧实验不随新守则改变；“重置为新实验”保留原实验并新建空状态。重新打开会显示尚未结束请求的实际输入，确认没有其他窗口处理后，通过“结束上次中断请求并恢复”继续；模型输出和记忆提交分别保存、分别展示。
 
 模型只提出候选。未确认的普通新增只能进入待核实区；更正、派生、删除、完成与重建须本人确认，随后仍由原 Python Store 检查来源、权限、时间、冲突、敏感字段和谱系。请求上下文使用最近至多20轮、合计64000字符以内的完整对话，以及至多32条获准记忆，不宣称无限上下文。一个实验对应独立 LOCAL 角色数据库，不提供多人身份认证或跨角色共享授权。自然语言理解、组合敏感性检测和整份守则的模型遵循不由结构化内核保证；暂停/恢复任务尚无对应内核操作，不伪装成取消或完成。
 
@@ -41,6 +41,6 @@ npm run desktop:windows
 
 开发模式可设置 `MEMORY_LAB_PYTHON` 为 Python 绝对路径，再运行 `npm run dev`。发布模式只加载同目录已打包内核，不查找系统 Python，不允许前端指定可执行文件或任意数据库路径。Python 以 stdio 调用，不开本地端口；Rust 管理超时、取消、错误和凭据。两端共用 `web-public` 的前端，只有桌面启用真实模型功能。
 
-私有仓库的固定模拟数据只维护 `web-public/src/public-demo.json`；桌面 `data.js` 在构建时生成，并与现有评估登记逐字节核对，不维护第二份数据源码。
+私有仓库的固定模拟数据只维护 `web-public/src/public-demo.json`；桌面 `data.js` 在构建时生成，并与固定演示评估登记逐字节核对，不维护第二份数据源码。历史评估保留原内核哈希，当前内核源码另按 `source-manifest.json` 核验；哈希匹配只证明构建来源，不代表旧评估验证了新实现。
 
 macOS 本地验证可用 `python3 build-kernel.py`，再执行 `npm run desktop -- --no-sign --bundles app -- --locked`；不生成 DMG。Windows 的安装、卸载、升级、凭据库和无开发环境首次启动须在 Windows 11 x64 验收。当前本地 macOS 结果不替代这些检查。人工视觉、文件面板和 GPU 体验独立验收。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。

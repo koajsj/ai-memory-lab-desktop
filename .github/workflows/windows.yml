@@ -159,22 +159,18 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build unsigned Windows x64 NSIS installer
         run: |
-          if ('${{ inputs.offline_installer }}' -eq 'true') {
-            'MEMORY_LAB_WEBVIEW_MODE=offlineInstaller' >> $env:GITHUB_ENV
-            $override = Join-Path $env:RUNNER_TEMP 'memory-offline-config.json'
-            @{bundle=@{windows=@{webviewInstallMode=@{type='offlineInstaller'}}}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $override
-            # npm's desktop:windows ends in `-- --locked`; append no Tauri flags
-            # after that Cargo separator. Invoke the same CLI with config first.
-            Push-Location app
-            try {
-              & ./node_modules/.bin/tauri.cmd build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --config $override --ci --no-sign -- --locked
-              if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            } finally { Pop-Location }
-          } else {
-            'MEMORY_LAB_WEBVIEW_MODE=embedBootstrapper' >> $env:GITHUB_ENV
-            npm --prefix app run desktop:windows
-          }
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # Frontend assets were built before cargo tests. Recheck the kernel,
+          # reuse those exact assets, then verify them against the installer below.
+          $mode = if ('${{ inputs.offline_installer }}' -eq 'true') { 'offlineInstaller' } else { 'embedBootstrapper' }
+          "MEMORY_LAB_WEBVIEW_MODE=$mode" >> $env:GITHUB_ENV
+          $override = Join-Path $env:RUNNER_TEMP 'memory-ci-config.json'
+          @{build=@{beforeBuildCommand='npm run kernel:check'};bundle=@{windows=@{webviewInstallMode=@{type=$mode}}}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $override
+          # Keep Tauri flags before the Cargo separator.
+          Push-Location app
+          try {
+            & ./node_modules/.bin/tauri.cmd build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --config $override --ci --no-sign -- --locked
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
       - name: Verify installer, native payload and source hashes
         run: |
           node app/package-windows.mjs --ci-installer

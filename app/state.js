@@ -7,10 +7,6 @@
     if(p<0)return list[0];
     return list[Math.max(0,Math.min(list.length-1,p+delta))];
   }
-  function makeExport(data,index){
-    if(!data.frames[index])throw new RangeError('轮次无效');
-    return JSON.stringify({kind:'本地结构化回放导出，非TeleAgent日志',policy:data.policy,boundary:data.boundary,frame:data.frames[index]},null,2);
-  }
-  const api={indices,select,makeExport};
+  const api={indices,select};
   if(typeof module!=='undefined')module.exports=api;else root.MemoryState=api;
 })(typeof window!=='undefined'?window:globalThis);

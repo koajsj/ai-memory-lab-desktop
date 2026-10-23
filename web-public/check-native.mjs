@@ -98,6 +98,15 @@ try{
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal(e('new').disabled,true,'opening an experiment must lock competing mutations');
  releaseOpen();await opening;holdOpen=null;
+ // Reopening a prepared request must show its actual input, not only the last saved turn.
+ let interrupted=service({op:'open',id:rows[0].id});
+ interrupted=service({op:'prepare',id:interrupted.id,revision:interrupted.revision,input:'重启前尚未完成的输入',request_id:'interrupted-preview',model:{}});
+ e('experiments').value=interrupted.id;await e('experiments').onchange();
+ assert.equal(e('recover').hidden,false);
+ assert(e('conversation').children.some(n=>n.textContent==='重启前尚未完成的输入'),'show the real pending input before offering recovery');
+ await e('recover').click();
+ assert.equal(service({op:'open',id:interrupted.id}).pending,null);
+ assert.equal(e('recover').hidden,true);
  e('name').value='新的空实验';await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
  // A complete provider reply must remain visible as unsaved when the catalog fails.
  failFinish=true;e('input').value='保存失败时保留输入';

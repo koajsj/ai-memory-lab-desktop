@@ -210,6 +210,9 @@ class Governance:
         for vid in seen:
             row=self.db.execute('SELECT * FROM memory_versions WHERE version_id=? AND role=?',(vid,ctx.role)).fetchone()
             if not row:raise ValueError('谱系跨角色或损坏')
+            meta=parse_json(row['meta'])
+            if not self._scope_allowed(ctx,meta) or (meta['privacy']=='restricted' and ctx.clearance!='restricted'):
+                raise PermissionError('清理影响超出当前作用域；事务未提交')
             active=self.db.execute('SELECT payload FROM facts WHERE role=? AND key=? AND state=?',(ctx.role,row['key'],row['part'])).fetchone()
             if active and row['payload'] and parse_json(active[0])==parse_json(row['payload']):
                 self.db.execute('DELETE FROM facts WHERE role=? AND key=? AND state=?',(ctx.role,row['key'],row['part']))
@@ -234,7 +237,7 @@ class Governance:
         if len(keys)!=len(set(keys)):raise ValueError('同一批次重复修改同一键，须拆分明确有序事件')
         for i,op in enumerate(clean['ops']):
             if not isinstance(op,dict) or not isinstance(op.get('key'),str):continue
-            key=op['key'];prior=self._latest(ctx.role,key,'current') or self._latest(ctx.role,key,'completed') or self._latest(ctx.role,key,'pending')
+            key=op['key'];prior=self._latest(ctx.role,key,'current') or self._latest(ctx.role,key,'completed') or self._latest(ctx.role,key,'pending') or self._latest(ctx.role,key,'history')
             if prior and (not self._scope_allowed(ctx,prior) or (prior['privacy']=='restricted' and ctx.clearance!='restricted')):
                 clean['ops'][i]={'op':'reject'};blocked.add(i);continue
             if op.get('op')!='set' or not isinstance(op.get('value'),str) or unsafe_fact(op):continue

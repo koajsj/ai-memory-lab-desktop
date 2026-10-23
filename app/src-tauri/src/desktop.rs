@@ -127,6 +127,15 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
             }
         }
     };
+    // A process can exit while its child still holds an inherited pipe open.
+    // Both IO tasks share the process deadline; join only after they finish.
+    while !writer.is_finished() || !reader.is_finished() {
+        if start.elapsed() > timeout {
+            terminate_worker(&mut child);
+            return Err("治理内核超时；请重新打开实验确认保存状态".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let write_result = writer.join().map_err(|_| "内核输入任务失败")?;
     let (bytes, oversized) = reader
         .join()
@@ -442,6 +451,16 @@ mod tests {
         let result = run_worker_command(command, json!({"padding":"x".repeat(4 * 1024 * 1024)}), Duration::from_millis(400));
         assert!(result.unwrap_err().contains("超时"));
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn exited_worker_with_inherited_output_obeys_deadline() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "sleep 2 &"]);
+        let started = Instant::now();
+        let error = run_worker_command(command, json!({"op":"list"}), Duration::from_millis(150)).unwrap_err();
+        assert!(error.contains("超时"));
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
     #[test]
     fn failed_worker_exit_is_not_reported_as_valid_json() {

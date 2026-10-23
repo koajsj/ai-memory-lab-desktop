@@ -357,3 +357,29 @@ def test_kernel_packaging_budget_and_inventory(tmp_path):
         inspect(binary, reader=Archive)
     with pytest.raises(FileNotFoundError):
         inspect(tmp_path/'missing.exe', reader=Archive)
+
+
+@pytest.mark.parametrize('operation',['delete','retire'])
+def test_scope_checks_cover_history_and_derived_cleanup(tmp_path,operation):
+    from dataclasses import replace
+    from tools.engine import Store,Context
+    with Store(tmp_path/'scoped.sqlite') as store:
+        owner=Context('owner','LOCAL',True,project='project_a')
+        stranger=replace(owner,project='project_b')
+        store.apply(owner,{'seq':1,'ops':[{'op':'set','key':'past','value':'历史事实','state':'history'}]})
+        previous=store.export_governance(owner)
+        result=store.apply(stranger,{'seq':2,'ops':[{'op':operation,'key':'past'}]})
+        assert result['decisions'][0]['action']=='REJECT'
+        assert store.read(owner,owner.role)['history']['past']['value']=='历史事实'
+        assert store.export_governance(owner)==previous
+        store.apply(owner,{'seq':3,'ops':[{'op':'set','key':'basis','value':'根事实'}]})
+        parent=store.inspect_memory(owner,'basis')['version_id']
+        narrow=replace(owner,conversation='private_session')
+        store.apply(narrow,{'seq':4,'ops':[{'op':'set','key':'summary','value':'会话专属派生'}]},scope='conversation',_derivations={'summary':[parent]})
+        before=store.read(narrow,narrow.role);audit=store.export_governance(narrow)
+        with pytest.raises(PermissionError):
+            store.apply(owner,{'seq':5,'ops':[{'op':operation,'key':'basis'}]})
+        assert store.read(narrow,narrow.role)==before
+        assert store.export_governance(narrow)==audit
+        store.apply(narrow,{'seq':5,'ops':[{'op':operation,'key':'basis'}]})
+        assert not store.read(narrow,narrow.role)['current']

@@ -1,9 +1,10 @@
 // Windows交付校验器的独立回归；PE仅为内存头部样本，不是可运行程序。
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,mkdir,copyFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,writeFile,mkdir,copyFile,rm,symlink,readFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import * as packaging from '../app/package-windows.mjs';
+import {verifyInputs} from '../app/build.mjs';
 const {inspectPE,checkedFile,verifyRelease,verifyInstaller,sha256}=packaging;
 
 function header(machine=0x8664,magic=0x20b,subsystem=2){
@@ -17,6 +18,21 @@ for(const b of [Buffer.alloc(10),header(0xaa64),header(0x14c,0x10b),header(0x866
 const invalid=header();invalid.writeUInt32LE(9999,60);assert.throws(()=>inspectPE(invalid,true));
 const tmp=await mkdtemp(path.join(os.tmpdir(),'memory-windows-check-'));
 try{
+  // Current implementation provenance is independent of an immutable demo evaluation.
+  const project=path.join(tmp,'build-inputs');await mkdir(path.join(project,'app'),{recursive:true});await mkdir(path.join(project,'tools'));
+  const core=Buffer.from('current core'),data='fixed demo';
+  const evaluation=JSON.stringify({inputs:{'tools/governance.py':sha256(Buffer.from('historical core')),'app/data.js':sha256(Buffer.from(data))}});
+  await writeFile(path.join(project,'app/evaluation.json'),evaluation);
+  await writeFile(path.join(project,'tools/governance.py'),core);
+  const sources={format:'memory-lab.private-source.v1',files:{'tools/governance.py':{sha256:sha256(core)}}};
+  const registry=path.join(project,'source-manifest.json');await writeFile(registry,JSON.stringify(sources));
+  await verifyInputs(project,data);
+  await assert.rejects(()=>verifyInputs(project,'changed demo'),/app\/data.js/);
+  sources.files['tools/governance.py'].sha256='0'.repeat(64);await writeFile(registry,JSON.stringify(sources));
+  await assert.rejects(()=>verifyInputs(project,data),/governance/);
+  delete sources.files['tools/governance.py'];await writeFile(registry,JSON.stringify(sources));
+  await assert.rejects(()=>verifyInputs(project,data),/governance/);
+  assert.equal(await readFile(path.join(project,'app/evaluation.json'),'utf8'),evaluation);
   const dir=path.join(tmp,'中文 空格');await mkdir(dir);
   const bytes=Buffer.from('仅为文件完整性样本');await writeFile(path.join(dir,'payload.bin'),bytes);
   const record={size:bytes.length,sha256:sha256(bytes)};

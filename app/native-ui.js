@@ -72,6 +72,7 @@ function render(){
  ui.recover.hidden=!exp.pending;ui.send.disabled=!!exp.pending;
  ui.position.max=String(Math.max(0,exp.frames.length-1));ui.position.value=String(frameIndex);ui.round.textContent=exp.frames.length?`${frameIndex+1} / ${exp.frames.length} 轮`:'尚无对话';
  ui.conversation.replaceChildren();const turn=exp.turns[frameIndex];
+ if(exp.pending)ui.conversation.append(text('h2','尚未结束的请求'),text('p',exp.pending.input),text('small','输入已保存，完整回复尚未提交。确认其他窗口没有处理此请求后，可结束请求并恢复。'));
  if(turn){ui.conversation.append(text('h2','本轮对话'),text('small','你'),text('p',turn.input),text('small','AI 回复 · '+(turn.status==='complete'?'已收到':({cancelled:'已取消',failed:'请求失败',interrupted:'上次中断'})[turn.status]||'未记录')),text('p',turn.reply||'本轮未保存完整回复，未提交记忆'));
  const usage=turn.usage;ui.conversation.append(text('small',usage?'回复 Token：'+JSON.stringify(usage):'回复 Token 用量未知'));
  if(turn.extraction_error)ui.conversation.append(text('p','候选提取失败；回复已保存，没有提交记忆。'));

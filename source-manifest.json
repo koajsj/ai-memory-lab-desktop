@@ -10,8 +10,8 @@
       "sha256": "778efb13ccd99016390738320ddafa6b5cec77ee2d5a49a6d730e44c7125a8d7"
     },
     ".gitignore": {
-      "size": 279,
-      "sha256": "3dadbf7927b7598589c5fb7156d1ae52f07a40692ba46794625600a27137c482"
+      "size": 291,
+      "sha256": "ef4804871c16f692c884a53adb52800321534b986a3b40b18ceb86ac3f188e8b"
     },
     "README.md": {
       "size": 645,
@@ -22,8 +22,8 @@
       "sha256": "04ce529dd197fb67e706049307a6ef6d895a2a8771d7aae2c21724d91ba0b643"
     },
     "app/README.md": {
-      "size": 5157,
-      "sha256": "21ab717ce7b0ed9a3c343af49bae360a9f1bc40b247139a186af255959c60739"
+      "size": 5351,
+      "sha256": "fd2a088dc90d8d24a0514c2c1be05024137c5d9a9fff10d23520aaa158332aa2"
     },
     "app/THIRD_PARTY_NOTICES.txt": {
       "size": 1251410,
@@ -38,16 +38,12 @@
       "sha256": "d6b852f4f68c4bb810ab270a5853a6e4120314c78efedfd4d4985af94bc27c9c"
     },
     "app/build.mjs": {
-      "size": 1745,
-      "sha256": "e41347e30264f9a3841d0838d5ee194ec36009a4b3d2a2966a4741902ba1a46d"
+      "size": 2160,
+      "sha256": "e1bf179d810136570b3c6383074599cec041fb0dc681226e62736d94c82e0e72"
     },
     "app/check-kernel.mjs": {
       "size": 1454,
       "sha256": "0ec64be3e002ae0085602a3667bfe29cbea9395ee489bf51e811ddb90e68c291"
-    },
-    "app/data.js": {
-      "size": 448401,
-      "sha256": "7aac9679a5ea5723093ce712f18a716eaef86d9046df92310cb76bf3fab84fdc"
     },
     "app/evaluation.json": {
       "size": 4651,
@@ -82,32 +78,20 @@
       "sha256": "69d959b5f0c5dde8efb0b2817f4de9b7e7a3bd82d57147b36316eb38435fb242"
     },
     "app/package.json": {
-      "size": 912,
-      "sha256": "758e199cea789bc0147e65a46ed853f7a967c0c3860536559ebaec202da18e98"
+      "size": 787,
+      "sha256": "227a75de8fa887a57e3329768e12c67c75158723d5ad91ed7d6f64d034c1edff"
     },
     "app/platform.js": {
       "size": 810,
       "sha256": "37e23324d22a5431bc141c576ecc8411ede4fc97d012ba1d1bff74b058949241"
     },
     "app/prepare-windows-ci.py": {
-      "size": 6744,
-      "sha256": "6c364bd27c2eff11ba4a4458f8f0d0721b0df021aa345b8226e8c15b8dd398a8"
+      "size": 6784,
+      "sha256": "cdd649390b99f47f8a05d21a2b08d930191c35cef6732f704d5161d1836eef03"
     },
     "app/sandbox.js": {
       "size": 20484,
       "sha256": "53a1996b4c2d10e0aeccafa3fc1f403fbd7dcff41dc86b91d585947c0d091679"
-    },
-    "app/src/audit.mjs": {
-      "size": 6643,
-      "sha256": "95ab2dba21f7a3d223e1e20dce17191ebe32d883415e75db036327f40e98e240"
-    },
-    "app/src/graph.js": {
-      "size": 20341,
-      "sha256": "a82ef26294720dbb637f04c9bc1c60ee3131cdbdabd5c766f877a1a2e2c886e9"
-    },
-    "app/src/view-math.mjs": {
-      "size": 2888,
-      "sha256": "cd50c2f8c4a8ab9620e9dd285c80ad5a516b84c323bc71fa9ad38a73feaae590"
     },
     "app/src-tauri/Cargo.lock": {
       "size": 121767,
@@ -152,6 +136,22 @@
     "app/src-tauri/tauri.windows.conf.json": {
       "size": 462,
       "sha256": "0b44987d26d48e9754186a1cf1f02fcb9dff47a518ffab2a88ebb8ca70440c94"
+    },
+    "app/src-tauri/windows-hooks.nsh": {
+      "size": 469,
+      "sha256": "53a728514632966419a8e89d3cdece8de7b7bce67bde7c57d3bf16fc34322210"
+    },
+    "app/src/audit.mjs": {
+      "size": 6643,
+      "sha256": "95ab2dba21f7a3d223e1e20dce17191ebe32d883415e75db036327f40e98e240"
+    },
+    "app/src/graph.js": {
+      "size": 20074,
+      "sha256": "ffcdcf491ccec2f281c10187d1b4fc1a5e99ade5f7d6a2b37b7cae5711abff28"
+    },
+    "app/src/view-math.mjs": {
+      "size": 2888,
+      "sha256": "cd50c2f8c4a8ab9620e9dd285c80ad5a516b84c323bc71fa9ad38a73feaae590"
     },
     "app/state.js": {
       "size": 835,
@@ -226,8 +226,8 @@
       "sha256": "07a40b6f41eeb86c4f24a4df4f0edf5fc62391a8deb28300c5ecf7f1d682687b"
     },
     "web-public/check.mjs": {
-      "size": 41618,
-      "sha256": "fb7bd6606f1935408511253d7fefdc027a24e6c2859cd4b1e82ed525d60f6064"
+      "size": 42953,
+      "sha256": "924c761292dd65bed4e5e16dc0d442b735f03d4f5fe7cefa2b924c08078dce3b"
     },
     "web-public/evaluation.json": {
       "size": 3967,
@@ -258,8 +258,8 @@
       "sha256": "d8adb7b2843a2b6fc6145404b86d7c389e215397bd8e980611e76026dab60647"
     },
     "web-public/package.json": {
-      "size": 425,
-      "sha256": "2bad2da99c7cbde9170852b87ff051c5215b867ef808a46c24a2d0266603f1c0"
+      "size": 384,
+      "sha256": "8083e8e75512eb410cfc4b398ec664544dcf436407be680be947ac0cd8da4ded"
     },
     "web-public/platform.js": {
       "size": 810,
@@ -274,8 +274,8 @@
       "sha256": "95ab2dba21f7a3d223e1e20dce17191ebe32d883415e75db036327f40e98e240"
     },
     "web-public/src/graph.js": {
-      "size": 20341,
-      "sha256": "a82ef26294720dbb637f04c9bc1c60ee3131cdbdabd5c766f877a1a2e2c886e9"
+      "size": 20074,
+      "sha256": "ffcdcf491ccec2f281c10187d1b4fc1a5e99ade5f7d6a2b37b7cae5711abff28"
     },
     "web-public/src/public-demo.json": {
       "size": 810620,
@@ -292,10 +292,6 @@
     "web-public/style.css": {
       "size": 29520,
       "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
-    },
-    "app/src-tauri/windows-hooks.nsh": {
-      "size": 469,
-      "sha256": "53a728514632966419a8e89d3cdece8de7b7bce67bde7c57d3bf16fc34322210"
     }
   }
 }

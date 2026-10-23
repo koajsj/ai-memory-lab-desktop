@@ -17,7 +17,7 @@ export class GraphView {
     this.controls.addEventListener('start',()=>{this.autoFrame=false;this.focusTarget=null;});
     this.scene.add(new THREE.AmbientLight(0xffffff,1.8));const light=new THREE.DirectionalLight(0xdbe9f5,2.6);light.position.set(10,16,12);this.scene.add(light);
     const grid=new THREE.GridHelper(24,12,0xe8ecee,0xf4f6f7);grid.position.y=-5.2;this.scene.add(grid);this.grid=grid;
-    this.geometries=Object.fromEntries(Object.keys(states).map(state=>[state,new THREE.CircleGeometry(.27,24)]));
+    this.nodeGeometry=new THREE.CircleGeometry(.27,24);
     this.role=new THREE.Mesh(new THREE.CircleGeometry(.32,24),new THREE.MeshStandardMaterial({color:0x6e808a,roughness:1,metalness:0}));this.scene.add(this.role);
     // 连线颜色按已登记关系类型着色，不推断语义或因果。
     this.lines=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.38}));this.scene.add(this.lines);
@@ -87,13 +87,12 @@ export class GraphView {
       let item=this.items.get(node.id);const target=new THREE.Vector3(...this.layout(node));
       if(!item){
         const group=new THREE.Group(),material=new THREE.MeshStandardMaterial({color:this.states[node.state].color,roughness:1,metalness:0,transparent:true});
-        const mesh=new THREE.Mesh(this.geometries[node.state],material);mesh.userData.id=node.id;group.add(mesh);
+        const mesh=new THREE.Mesh(this.nodeGeometry,material);mesh.userData.id=node.id;group.add(mesh);
         const label=this.text(node.label);label.position.y=.7;group.add(label);group.position.copy(target);
         if(animate&&this.motion){group.position.multiplyScalar(.7);group.scale.setScalar(.05);}
         this.scene.add(group);item={group,mesh,label,target,exiting:false,node};this.items.set(node.id,item);
       }
-      if(item.mesh.geometry!==this.geometries[node.state]||item.node.label!==node.label){
-        item.mesh.geometry=this.geometries[node.state];item.mesh.material.color.setHex(this.states[node.state].color);
+      if(item.node.label!==node.label){
         item.group.remove(item.label);item.label.material.map.dispose();item.label.material.dispose();
         item.label=this.text(node.label);item.group.add(item.label);
       }
@@ -177,7 +176,7 @@ export class GraphView {
   dispose(){
     if(this.destroyed)return;this.destroyed=true;cancelAnimationFrame(this.raf);this.resize.disconnect();this.controls.dispose();
     const canvas=this.renderer.domElement;canvas.removeEventListener('pointerdown',this.pointerDown);canvas.removeEventListener('pointerup',this.pointerUp);canvas.removeEventListener('pointermove',this.pointerMove);canvas.removeEventListener('pointercancel',this.pointerCancel);canvas.removeEventListener('webglcontextlost',this.contextLost);this.down=null;
-    for(const id of [...this.items.keys()])this.remove(id);for(const g of Object.values(this.geometries))g.dispose();this.lines.geometry.dispose();this.lines.material.dispose();this.highlight.geometry.dispose();this.highlight.material.dispose();this.role.geometry.dispose();this.role.material.dispose();this.grid.geometry.dispose();if(Array.isArray(this.grid.material))this.grid.material.forEach(x=>x.dispose());else this.grid.material.dispose();
+    for(const id of [...this.items.keys()])this.remove(id);this.nodeGeometry.dispose();this.lines.geometry.dispose();this.lines.material.dispose();this.highlight.geometry.dispose();this.highlight.material.dispose();this.role.geometry.dispose();this.role.material.dispose();this.grid.geometry.dispose();if(Array.isArray(this.grid.material))this.grid.material.forEach(x=>x.dispose());else this.grid.material.dispose();
     if(this.roleLabel){this.roleLabel.material.map.dispose();this.roleLabel.material.dispose();}this.renderer.dispose();canvas.remove();
   }
 }

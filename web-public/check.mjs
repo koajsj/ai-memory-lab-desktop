@@ -85,7 +85,7 @@ function graphInstance(w=800,h=400){
  Object.assign(g,{host:{clientWidth:w,clientHeight:h},states:M.states,items:new Map(),motion:true,autoFrame:true,
   scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(43,w/h,.1,160),role:new THREE.Mesh(new THREE.CircleGeometry(.32,24)),
   lines:new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial()),highlight:new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial()),
-  geometries:Object.fromEntries(Object.keys(M.states).map(k=>[k,new THREE.CircleGeometry(.27,24)])),request(){},
+  nodeGeometry:new THREE.CircleGeometry(.27,24),request(){},
   text(){return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.Texture()}));},
   controls:{target:new THREE.Vector3(),update(){g.camera.lookAt(this.target);g.camera.updateMatrixWorld();}},renderer:{render(){},setPixelRatio(){},setSize(){}},last:performance.now()});
  g.setCatalog(ds.data.frames.flatMap((_,i)=>M.graph(ds,i).nodes));return g;
@@ -101,13 +101,31 @@ for(const [w,h]of [[686,320],[966,400],[1400,600]]){
   }
  }
  g.setData({nodes:[],edges:[],count:0},ds.role,{animate:false,privateVisible:false});assert.equal(g.items.size,0);
- for(const geom of Object.values(g.geometries))geom.dispose();for(const obj of [g.role,g.lines,g.highlight]){obj.geometry.dispose();obj.material.dispose();}
+ g.nodeGeometry.dispose();for(const obj of [g.role,g.lines,g.highlight]){obj.geometry.dispose();obj.material.dispose();}
  if(g.roleLabel){g.roleLabel.material.map.dispose();g.roleLabel.material.dispose();}
 }
 console.log('PASS：102次真实Three.js对象/相机取景/圆点朝向与快速切轮，含无值派生证据、空和未核验视角；非GPU渲染。');
 // 针对图谱缺口的原子回归：实际Three.js对象与数学，不使用浏览器或GPU。
 const graphFailures=[];let graphChecks=0;
 function graphTest(name,fn){try{fn();graphChecks++;}catch(err){graphFailures.push(name+': '+err.message);}}
+graphTest('相同节点造型共享几何体，只有状态变化时复用标签并更新颜色',()=>{
+ const g=graphInstance(),model=M.graph(ds,27);g.setData(model,ds.role,{animate:false});
+ const node=model.nodes[0],item=g.items.get(node.id),label=item.label;
+ assert.equal(new Set([...g.items.values()].map(x=>x.mesh.geometry)).size,1);
+ const changed={...model,nodes:model.nodes.map(n=>({...n,state:'history'}))};
+ g.setData(changed,ds.role,{animate:false});
+ assert.equal(item.label,label,'纯状态变化不应销毁并重建相同文本的纹理');
+ assert.equal(new Set([...g.items.values()].map(x=>x.mesh.geometry)).size,1);
+ assert.equal(item.mesh.material.color.getHex(),M.states.history.color);
+ g.setData({...changed,nodes:changed.nodes.map(n=>({...n,label:n.label+' · 更新'}))},ds.role,{animate:false});
+ assert.notEqual(item.label,label,'文字变化仍须更新纹理');
+ let released=0;g.nodeGeometry.addEventListener('dispose',()=>released++);
+ g.remove(node.id);assert.equal(released,0,'移除单节点不得释放共享几何体');
+ g.grid=new THREE.GridHelper(1,1);g.resize={disconnect(){}};g.controls.dispose=()=>{};
+ g.renderer.domElement={removeEventListener(){},remove(){}};g.renderer.dispose=()=>{};
+ const cancel=globalThis.cancelAnimationFrame;globalThis.cancelAnimationFrame=()=>{};
+ try{g.dispose();g.dispose();assert.equal(released,1);}finally{globalThis.cancelAnimationFrame=cancel;}
+});
 graphTest('同字段多次删除的无值版本不重叠，导航顺序不改变坐标',()=>{
  const engine=require('./sandbox.js').create(ds.data.policy);engine.apply({value:'初始偏好'});
  for(let i=0;i<4;i++)engine.apply({action:'CORRECT',value:'偏好修订 '+i});engine.apply({action:'DELETE'});

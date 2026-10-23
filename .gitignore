@@ -6,6 +6,7 @@ app/src-tauri/gen/
 app/src-tauri/binaries/
 app/web-dist/
 app/graph.bundle.js
+app/data.js
 app/assets-manifest.json
 app/releases/
 app/ci-artifact/

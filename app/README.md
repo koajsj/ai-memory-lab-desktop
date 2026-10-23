@@ -41,4 +41,6 @@ npm run desktop:windows
 
 开发模式可设置 `MEMORY_LAB_PYTHON` 为 Python 绝对路径，再运行 `npm run dev`。发布模式只加载同目录已打包内核，不查找系统 Python，不允许前端指定可执行文件或任意数据库路径。Python 以 stdio 调用，不开本地端口；Rust 管理超时、取消、错误和凭据。两端共用 `web-public` 的前端，只有桌面启用真实模型功能。
 
+私有仓库的固定模拟数据只维护 `web-public/src/public-demo.json`；桌面 `data.js` 在构建时生成，并与现有评估登记逐字节核对，不维护第二份数据源码。
+
 macOS 本地验证可用 `python3 build-kernel.py`，再执行 `npm run desktop -- --no-sign --bundles app -- --locked`；不生成 DMG。Windows 的安装、卸载、升级、凭据库和无开发环境首次启动须在 Windows 11 x64 验收。当前本地 macOS 结果不替代这些检查。人工视觉、文件面板和 GPU 体验独立验收。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。

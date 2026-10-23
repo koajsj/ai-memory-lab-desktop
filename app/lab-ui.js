@@ -22,5 +22,5 @@ $('lab-export').addEventListener('click',async()=>{if(!session)return;if(!W.auth
 let seen=false;try{seen=root.localStorage?.getItem('memory-lab.intro-seen')==='1';}catch{}
 $('welcome').hidden=seen;
 $('welcome-start').addEventListener('click',()=>{$('welcome').hidden=true;try{root.localStorage?.setItem('memory-lab.intro-seen','1');}catch{} $('play').focus?.();});
-const leave=()=>{if(session)W.restore(root.MemoryModel.adapt(root.REPLAY_DATA));session=null;saved=null;panel.hidden=true;$('enter-experiment').setAttribute('aria-pressed','false');$('lab-value').value='';$('lab-parents').value='';};root.addEventListener('pagehide',leave,{once:true});
+const leave=()=>{if(session)W.restore(root.MemoryModel.adapt(root.REPLAY_DATA));session=null;saved=null;panel.hidden=true;$('enter-experiment').setAttribute('aria-pressed','false');$('lab-value').value='';$('lab-parents').value='';};root.addEventListener('memory-native-sample',leave);root.addEventListener('pagehide',leave,{once:true});
 })(window);

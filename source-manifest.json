@@ -18,12 +18,12 @@
       "sha256": "fa34b005569307ad99ff58d8cd3cd39ce7a4a7efae7e51d27ae964f689292efe"
     },
     "app/QUICKSTART.md": {
-      "size": 2678,
-      "sha256": "04ce529dd197fb67e706049307a6ef6d895a2a8771d7aae2c21724d91ba0b643"
+      "size": 3060,
+      "sha256": "6b02c355f6048368efe57599952ae26d0570d63750c261bcf3a16c90336e1072"
     },
     "app/README.md": {
-      "size": 5619,
-      "sha256": "aeb93650b940b661bbd0d93a90834e13f6408380fc836166d4ed0b65010f3b7f"
+      "size": 6619,
+      "sha256": "d0d1207e85e3466d2d78ebb132631201ddf7f6f4cbfd5dafc3a0a6d9e1280935"
     },
     "app/THIRD_PARTY_NOTICES.txt": {
       "size": 1251410,
@@ -58,16 +58,16 @@
       "sha256": "056852bf66f0cd78297b38f0124ae9a8d3be666fb9fb262a493e66cc9e00c949"
     },
     "app/lab-ui.js": {
-      "size": 5029,
-      "sha256": "8523672ac1b109c671130d2766eac3350fec8feb550b29c60bf91e9f2f6d3bcf"
+      "size": 5081,
+      "sha256": "b397205faf5b98c1c20c7eb74756b80ca332d822cdea81cc542eae646ebfa9ce"
     },
     "app/model.js": {
       "size": 25784,
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "app/native-ui.js": {
-      "size": 24885,
-      "sha256": "87d951e8f77ffdb764ca1b45972a9e9f73c17644d5da76a206968d4425d85510"
+      "size": 34441,
+      "sha256": "caa9982116bb53f2c884de6d29e5c667a04ea5f5661eb4c6db0065e9065b32f0"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -118,8 +118,8 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "app/src-tauri/src/desktop.rs": {
-      "size": 20966,
-      "sha256": "1aeff5a1eec22dfc253c692079fdb136a0555626c8705ffcf9c82e24eee7b92d"
+      "size": 21411,
+      "sha256": "41cb3d7755ed08d4cc8bb6e3508adc12004511166e560b558f90ce7c79624c8b"
     },
     "app/src-tauri/src/main.rs": {
       "size": 2953,
@@ -158,8 +158,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "app/style.css": {
-      "size": 29520,
-      "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
+      "size": 32714,
+      "sha256": "16a4abb40a57c262d26d5b09c84b05897671192f0e78bf7f16dda1de32776299"
     },
     "app/sync-frontend.mjs": {
       "size": 1425,
@@ -178,8 +178,8 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 26246,
-      "sha256": "817a9bd058a1dd78dad8bbab02e6af4eaea1161581d345f84b45a1bdb9b35562"
+      "size": 27814,
+      "sha256": "13e71620eba14a1114d2a9d78ca810d0b24522f78ce0d7456365f5c6e2840b79"
     },
     "tools/check_native_worker.py": {
       "size": 5251,
@@ -190,8 +190,8 @@
       "sha256": "2a4f6b69944b7947389719d1940788b610d39d3fba1108a844485c61aaeb5bb7"
     },
     "tools/desktop_service.py": {
-      "size": 23387,
-      "sha256": "ba6f7986d0003e1bf638e2cd1cfef193705c90bacde401ac02a69d051736ef0f"
+      "size": 23732,
+      "sha256": "cdf38e206ef5878dc82a22486ec56a1124301762b1244afdb146ac6a1294166c"
     },
     "tools/engine.py": {
       "size": 23048,
@@ -218,8 +218,8 @@
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 14849,
-      "sha256": "ce3987edaa64bd89a686e430950ffb9565f15f76baced26450bac709f5a27028"
+      "size": 19920,
+      "sha256": "4e0f84a58b23bf21abc9ef826dac7ee5062e3b88b18fcc09e0199221507075bd"
     },
     "web-public/check-sandbox.mjs": {
       "size": 15801,
@@ -242,16 +242,16 @@
       "sha256": "6d06ad897a963e7b127b9e3b048c497db46aa3f99df968674ad3db26fd60c48f"
     },
     "web-public/lab-ui.js": {
-      "size": 5029,
-      "sha256": "8523672ac1b109c671130d2766eac3350fec8feb550b29c60bf91e9f2f6d3bcf"
+      "size": 5081,
+      "sha256": "b397205faf5b98c1c20c7eb74756b80ca332d822cdea81cc542eae646ebfa9ce"
     },
     "web-public/model.js": {
       "size": 25784,
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "web-public/native-ui.js": {
-      "size": 24885,
-      "sha256": "87d951e8f77ffdb764ca1b45972a9e9f73c17644d5da76a206968d4425d85510"
+      "size": 34441,
+      "sha256": "caa9982116bb53f2c884de6d29e5c667a04ea5f5661eb4c6db0065e9065b32f0"
     },
     "web-public/package-lock.json": {
       "size": 14868,
@@ -290,8 +290,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "web-public/style.css": {
-      "size": 29520,
-      "sha256": "d9f13eaf9b3fbdb635a62745282cf9e76fde0beeffa2a93043a61009e2f31892"
+      "size": 32714,
+      "sha256": "16a4abb40a57c262d26d5b09c84b05897671192f0e78bf7f16dda1de32776299"
     }
   }
 }

@@ -64,7 +64,10 @@ fn terminate_worker(child: &mut Child) {
         use std::os::windows::process::CommandExt;
         // PyInstaller --onefile uses a child process. Terminate the whole tree
         // so a timed-out child cannot keep SQLite or inherited pipes open.
-        if let Some(system_root) = std::env::var_os("SystemRoot").map(PathBuf::from).filter(|p| p.is_absolute()) {
+        if let Some(system_root) = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+        {
             let _ = Command::new(system_root.join("System32/taskkill.exe"))
                 .args(["/PID", &child.id().to_string(), "/T", "/F"])
                 .creation_flags(0x08000000)
@@ -81,8 +84,7 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
     if input.len() > 8 * 1024 * 1024 {
         return Err("请求过大".into());
     }
-    cmd
-        .stdin(Stdio::piped())
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     #[cfg(windows)]
@@ -105,9 +107,15 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
         let mut oversized = false;
         loop {
             let count = stdout.read(&mut chunk)?;
-            if count == 0 { break; }
-            if bytes.len() + count > 16 * 1024 * 1024 { oversized = true; }
-            if !oversized { bytes.extend_from_slice(&chunk[..count]); }
+            if count == 0 {
+                break;
+            }
+            if bytes.len() + count > 16 * 1024 * 1024 {
+                oversized = true;
+            }
+            if !oversized {
+                bytes.extend_from_slice(&chunk[..count]);
+            }
         }
         Ok::<_, std::io::Error>((bytes, oversized))
     });
@@ -145,21 +153,40 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
         return Err("实验过大，请导出并新建实验".into());
     }
     let out: Value = serde_json::from_slice(&bytes).map_err(|_| {
-        if status.success() { "内核输出格式无效".into() }
-        else { format!("治理内核异常退出（退出码 {:?}）；未返回有效结果", status.code()) }
+        if status.success() {
+            "内核输出格式无效".into()
+        } else {
+            format!(
+                "治理内核异常退出（退出码 {:?}）；未返回有效结果",
+                status.code()
+            )
+        }
     })?;
     if !status.success() && out["ok"] == true {
-        return Err(format!("治理内核异常退出（退出码 {:?}）；结果未确认", status.code()));
+        return Err(format!(
+            "治理内核异常退出（退出码 {:?}）；结果未确认",
+            status.code()
+        ));
     }
     if write_result.is_err() && status.success() {
         return Err("内核输入失败；结果未确认".into());
     }
     if out["ok"] != true {
         let message = out["error"].as_str().unwrap_or("");
-        let safe = if matches!(message, "实验达到8MB容量，请导出后新建" | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。") {
+        let safe = if matches!(
+            message,
+            "实验达到8MB容量，请导出后新建"
+                | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。"
+        ) {
             message.into()
-        } else { "治理操作失败；内核未返回可识别的错误".into() };
-        return Err(if status.success() { safe } else { format!("治理内核退出码 {:?}；{safe}", status.code()) });
+        } else {
+            "治理操作失败；内核未返回可识别的错误".into()
+        };
+        return Err(if status.success() {
+            safe
+        } else {
+            format!("治理内核退出码 {:?}；{safe}", status.code())
+        });
     }
     Ok(out["result"].clone())
 }
@@ -201,7 +228,7 @@ pub fn default_rules() -> String {
     include_str!("../../../memory-rules.md").into()
 }
 #[tauri::command]
-pub async fn import_rules() -> Result<Option<String>, String> {
+pub async fn import_rules() -> Result<Option<Value>, String> {
     let selected = rfd::AsyncFileDialog::new()
         .set_title("导入本实验的记忆守则")
         .add_filter("Markdown", &["md", "txt"])
@@ -216,7 +243,7 @@ pub async fn import_rules() -> Result<Option<String>, String> {
         if text.trim().is_empty() {
             return Err("守则为空".into());
         }
-        Ok(Some(text))
+        Ok(Some(json!({"text": text, "name": file.file_name()})))
     } else {
         Ok(None)
     }
@@ -448,7 +475,11 @@ mod tests {
         };
         command.current_dir(std::env::temp_dir());
         let started = Instant::now();
-        let result = run_worker_command(command, json!({"padding":"x".repeat(4 * 1024 * 1024)}), Duration::from_millis(400));
+        let result = run_worker_command(
+            command,
+            json!({"padding":"x".repeat(4 * 1024 * 1024)}),
+            Duration::from_millis(400),
+        );
         assert!(result.unwrap_err().contains("超时"));
         assert!(started.elapsed() < Duration::from_secs(10));
     }
@@ -458,7 +489,8 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "sleep 2 &"]);
         let started = Instant::now();
-        let error = run_worker_command(command, json!({"op":"list"}), Duration::from_millis(150)).unwrap_err();
+        let error = run_worker_command(command, json!({"op":"list"}), Duration::from_millis(150))
+            .unwrap_err();
         assert!(error.contains("超时"));
         assert!(started.elapsed() < Duration::from_secs(1));
     }
@@ -474,7 +506,8 @@ mod tests {
             c
         };
         command.current_dir(std::env::temp_dir());
-        let error = run_worker_command(command, json!({"op":"list"}), Duration::from_secs(5)).unwrap_err();
+        let error =
+            run_worker_command(command, json!({"op":"list"}), Duration::from_secs(5)).unwrap_err();
         assert!(error.contains("退出码 Some(7)"));
     }
     #[tokio::test]

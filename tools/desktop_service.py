@@ -111,6 +111,10 @@ class Service:
         if op=='create':
             ident=uuid.uuid4().hex;rules=short(q.get('rules'),100000)
             state=dict(format=FORMAT,mode='MODEL_EXPERIMENT',engine='python-store.v3',id=ident,name=short(q.get('name'),80),revision=0,role='LOCAL',rules=dict(text=rules,sha256=hashlib.sha256(rules.encode()).hexdigest()),turns=[],frames=[],pending=None,context_start=0)
+            if 'rules_source' in q:
+                source=q['rules_source']
+                if not isinstance(source,dict) or set(source)!={'kind','name'} or source['kind'] not in ('builtin','custom'):raise ValueError('守则来源格式无效')
+                state['rules']['source']=dict(kind=source['kind'],name=short(source['name'],255))
             blob=b''
         else:
             ident=self._id(q.get('id'))

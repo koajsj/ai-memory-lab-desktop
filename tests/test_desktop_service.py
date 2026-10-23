@@ -157,6 +157,26 @@ def test_validation_export_and_rules_snapshot(service):
     assert out['mode']=='MODEL_EXPERIMENT'
     with pytest.raises(ValueError):service.call({'op':'open','id':'../escape'})
 
+def test_rule_provenance_is_frozen_and_legacy_remains_readable(service):
+    import hashlib
+    rules=Path(__file__).resolve().parents[1].joinpath('memory-rules.md').read_text(encoding='utf-8')
+    source={'kind':'builtin','name':'memory-rules.md'}
+    old=service.call({'op':'create','name':'内置守则','rules':rules,'rules_source':source})
+    assert old['rules']=={'text':rules,'sha256':hashlib.sha256(rules.encode()).hexdigest(),'source':source}
+    custom=service.call({'op':'create','name':'自定义守则','rules':'自定义规则','rules_source':{'kind':'custom','name':'我的规则.md'}})
+    old=service.call({'op':'rename','id':old['id'],'revision':old['revision'],'name':'原守则不变'})
+    assert old['rules']['text']==rules and custom['rules']['text']=='自定义规则'
+    assert Service(service.root).call({'op':'open','id':old['id']})['rules']==old['rules']
+    assert service.call({'op':'export','id':custom['id'],'sections':['rules']})['rules']==custom['rules']
+    before=service.call({'op':'list'})
+    for source in ({'kind':'unknown','name':'x'}, {'kind':'custom','name':''}, {'kind':'custom','name':'x','text':'injected'}):
+        with pytest.raises(ValueError):service.call({'op':'create','name':'无效来源','rules':rules,'rules_source':source})
+        assert service.call({'op':'list'})==before
+    # Pre-provenance records continue to open without inventing their origin.
+    legacy=create(service)
+    assert 'source' not in legacy['rules']
+    assert service.call({'op':'open','id':legacy['id']})['rules']==legacy['rules']
+
 def test_candidate_lineage_and_delete_cascade(service):
     exp=finish(service,create(service),text='待核实线索')
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':False})

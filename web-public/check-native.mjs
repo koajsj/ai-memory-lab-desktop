@@ -5,7 +5,14 @@ const require=createRequire(import.meta.url);globalThis.MemoryModel=require('./m
 const demo=require('./src/public-demo.json');
 const withHash=structuredClone(demo);withHash.data.policy.sha256='a'+'1234567890123'+'b'.repeat(50);if(withHash.policy)withHash.policy.sha256=withHash.data.policy.sha256;assert.equal(globalThis.MemoryModel.adapt(withHash).data.policy.sha256,withHash.data.policy.sha256);
 const secret=structuredClone(withHash);secret.data.frames[0].input='1234567890123';assert.throws(()=>globalThis.MemoryModel.adapt(secret),/敏感/);
-const {runner,extracted}=require('./native-ui.js');
+const {runner,extracted,ruleDraft}=require('./native-ui.js');
+if(existsSync(new URL('../tools/desktop_service.py',import.meta.url))){
+ const builtinText=await readFile(new URL('../memory-rules.md',import.meta.url),'utf8');
+ const policy=await ruleDraft(builtinText,'memory-rules.md','builtin');
+ assert.equal(policy.sha256,(await import('node:crypto')).createHash('sha256').update(builtinText).digest('hex'));
+ assert.equal(policy.text,builtinText);assert.equal(policy.source.kind,'builtin');
+}
+for(const text of ['', ' '.repeat(10),'a'.repeat(100001)])await assert.rejects(()=>ruleDraft(text,'bad.md','custom'),/守则/);
 assert.throws(()=>extracted('{"candidates":[],"candidates":[{}]}'),/重复/);
 assert.throws(()=>extracted('{"candidates":[],"__proto__":{}}'));
 let ops=[],saved=[],text='';
@@ -44,11 +51,13 @@ class El {
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
  async click(){if(this.onclick)await this.onclick();for(const f of this.events.click||[])await f();}
 }
-let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false;
+let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,imported=null;
+const preferences=new Map(),windowEvents={};let sampleData=null;
 const service=q=>JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
-const win={document:{body:new El('body'),createElement:tag=>new El(tag),getElementById:()=>originalEntry},MemoryModel:globalThis.MemoryModel,MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener(){},confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
+const win={document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
+ if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');return service(args.request);}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答'}]}),usage:null};}
@@ -56,10 +65,17 @@ const win={document:{body:new El('body'),createElement:tag=>new El(tag),getEleme
  throw Error('Unexpected command '+command);
  }}}};
 try{
- vm.runInNewContext(nativeSource,{window:win,globalThis:win,Option:class extends El{constructor(label,value){super();this.textContent=label;this.value=value;}},Event:class{}});
- assert.equal(originalEntry.hidden,false);await originalEntry.click();
+ vm.runInNewContext(nativeSource,{window:win,globalThis:win,TextEncoder,Option:class extends El{constructor(label,value){super();this.textContent=label;this.value=value;}},Event:class{}});
+ assert.equal(originalEntry.hidden,false);await windowEvents.load();
  const e=name=>elements.get('nl-'+name);
+ assert(e('rules-selected').textContent.includes(await ruleDraft('测试守则：候选隔离，明确确认后裁决。','memory-rules.md','builtin').then(p=>p.sha256)));
+ assert.equal(e('setup').hidden,false);assert.equal(e('workspace').hidden,true);
+ assert.equal(e('remove').disabled,true);
+ assert.equal(e('guide').hidden,false);await e('guide-skip').click();assert.equal(e('guide').hidden,true);
+ await e('help').click();for(let i=0;i<4;i++){await e('guide-action').click();await e('guide-next').click();}assert.equal(e('guide').hidden,true);
+ assert.equal(requests,0,'help must never call a model');assert.equal(service({op:'list'}).length,0,'help must not create experiments');
  e('name').value='最小DOM实验';await e('new').click();assert.equal(service({op:'list'}).length,1);
+ assert.equal(e('setup').hidden,true);assert.equal(e('workspace').hidden,false);
  e('provider').value='Mock';e('protocol').value='openai';e('base').value='http://localhost/v1';e('model').value='test';e('key').value='TEMP_KEY';await e('profile-save').click();assert.equal(e('key').value,'');
  e('model').value='edited-model';await e('profile-save').click();assert.equal(savedProfileKey,null,'editing metadata with blank key must preserve the existing credential');
  e('input').value='请记住我喜欢简洁回答';e('stream').checked=true;
@@ -107,7 +123,10 @@ try{
  await e('recover').click();
  assert.equal(service({op:'open',id:interrupted.id}).pending,null);
  assert.equal(e('recover').hidden,true);
- e('name').value='新的空实验';await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
+ e('name').value='新的空实验';const beforeDraft=service({op:'list'});await e('new').click();
+ assert.deepEqual(service({op:'list'}),beforeDraft,'unconfirmed edited rules must not silently become an experiment policy');
+ assert(e('status').textContent.includes('预览并确认'));
+ await e('rules-undo').click();await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
  // A complete provider reply must remain visible as unsaved when the catalog fails.
  failFinish=true;e('input').value='保存失败时保留输入';
  await e('composer').onsubmit({preventDefault(){}});
@@ -127,8 +146,33 @@ try{
  e('filter').onchange();
  assert.equal(e('graph-note').textContent,'WebGL运行失败，请使用二维记忆列表。','rerender must retain the runtime WebGL fallback explanation');
  assert.equal(e('fit').disabled,true,'camera controls must remain disabled after the renderer is disposed');
- await e('remove').click();assert.equal(e('policy').textContent,'');assert.equal(e('round').textContent,'尚无对话');assert.equal(e('send').disabled,true);assert.equal(e('details').children.length,0);
+ await e('remove').click();assert.equal(e('policy').textContent,'');assert.equal(e('round').textContent,'尚无对话');assert.equal(e('send').disabled,true);assert.equal(e('details').children.length,0);assert.equal(e('current-rules-text').textContent,'');assert.equal(e('current-rules-hash').textContent,'');
  await e('close').click();assert.equal(dispose,1);assert.equal(service({op:'open',id:rows[0].id}).rules.text,'测试守则：候选隔离，明确确认后裁决。');
+ await originalEntry.click();assert.equal(e('guide').hidden,true,'dismissed help must stay dismissed');
+ e('experiments').value=rows[0].id;await e('experiments').onchange();const fixed=service({op:'open',id:rows[0].id}).rules;
+ const defaultDraft=e('rules').value;
+ imported={text:'新的自定义守则：只保存明确事实。',name:'中文 规则.md'};await e('rules-import').click();
+ assert.equal(e('rules').value,defaultDraft,'import must await explicit confirmation');assert.equal(e('rules-preview').hidden,false);
+ assert(e('rules-preview-hash').textContent.includes('中文 规则.md'));
+ assert(e('rules-preview-hash').textContent.includes((await ruleDraft(imported.text,imported.name,'custom')).sha256));
+ await e('rules-accept').click();assert.equal(e('rules').value,imported.text);assert(e('rules-selected').textContent.includes(imported.name));
+ await e('rules-default').click();await e('rules-import').click();
+ await e('rules-cancel').click();assert.equal(e('rules').value,defaultDraft);
+ imported=new Error('导入失败样本');await e('rules-import').click();assert.equal(e('rules').value,defaultDraft);assert(e('status').textContent.includes('导入失败样本'));
+ imported={text:'',name:'空规则.md'};await e('rules-import').click();assert.equal(e('rules').value,defaultDraft);assert(e('status').textContent.includes('守则'));
+ e('rules').value='粘贴的自定义规则';await e('rules-review').click();await e('rules-accept').click();
+ assert.deepEqual(service({op:'open',id:rows[0].id}).rules,fixed,'a new policy selection must never rewrite an existing experiment');
+ e('name').value='自定义规则实验';await e('new').click();const custom=service({op:'list'})[0];
+ assert.equal(service({op:'open',id:custom.id}).rules.source.name,'粘贴文本');
+ await e('rules-default').click();assert.equal(service({op:'open',id:custom.id}).rules.text,'粘贴的自定义规则');
+ await e('reset').click();assert.equal(service({op:'open',id:service({op:'list'})[0].id}).rules.text,'粘贴的自定义规则','reset inherits the original experiment policy, not the newly selected default');
+ e('experiments').value=rows[0].id;await e('experiments').onchange();
+ assert.equal(e('current-rules-text').textContent,fixed.text);assert(e('current-rules-hash').textContent.includes(fixed.sha256));
+ e('position').value='0';e('position').oninput();await e('evolution-view').click();assert.equal(e('position').value,'0');
+ assert(e('conversation').children.some(n=>n.textContent==='本轮实际变化'));assert.equal(e('composer').hidden,true);
+ await e('chat-view').click();assert.equal(e('position').value,'0');assert.equal(e('composer').hidden,false);
+ const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
+ await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');
 }finally{await rm(folder,{recursive:true,force:true});}
 

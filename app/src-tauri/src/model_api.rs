@@ -4,6 +4,34 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::sync::watch;
 
+// Recognizable credential shapes only; this is not a semantic privacy classifier.
+fn contains_credential(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if ["-----begin private key-----", "-----begin rsa private key-----", "-----begin ec private key-----"]
+        .iter().any(|marker| lower.contains(marker)) {
+        return true;
+    }
+    let words: Vec<_> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric() && !"_-.+/=~".contains(c))
+        .filter(|s| !s.is_empty()).collect();
+    words.iter().enumerate().any(|(i, token)| {
+        (token.starts_with("sk-") && token.len() >= 19)
+            || (["ghp_", "github_pat_", "xoxb-", "xoxp-", "aiza", "akia"]
+                .iter().any(|p| token.starts_with(p)) && token.len() >= 20)
+            || (token.starts_with("eyj") && token.split('.').filter(|s| s.len() >= 8).count() == 3)
+            || (i > 0 && words[i - 1] == "bearer" && token.len() >= 12)
+            || (["password=", "api_key=", "access_token=", "client_secret="]
+                .iter().any(|p| token.starts_with(p) && token.len() > p.len() + 3))
+    })
+}
+
+pub fn validate_text(text: &str, key: &str) -> Result<(), String> {
+    if contains_credential(text) || (!key.is_empty() && text.contains(key)) {
+        return Err("消息含可识别凭据，请先脱敏；未发送模型请求或保存实验".into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
@@ -34,6 +62,24 @@ mod tests {
             base_url: "https://example.org/v1".into(),
             model: "user-model".into(),
         }
+    }
+    #[test]
+    fn credentials_are_not_forwarded_as_chat_or_emitted_from_split_responses() {
+        let secret=format!("sk-{}", "SyntheticOnly".repeat(3));
+        assert!(request(&p("openai"),"k","rules",&[Message{role:"user".into(),content:secret.clone()}],true).is_err());
+        assert!(validate_text("an opaque locally configured credential", "opaque locally configured credential").is_err());
+        for value in [&secret, "Bearer syntheticCredentialOnly123456", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljU2lnbmF0dXJl", "-----BEGIN PRIVATE KEY-----"] {
+            let mut d=Decoder::default();let mut emitted=String::new();let mut rejected=false;
+            for part in value.as_bytes().chunks(2) {
+                let v=json!({"choices":[{"delta":{"content":std::str::from_utf8(part).unwrap()}}]});
+                match d.accept("openai",&v,true) { Ok(text)=>emitted.push_str(&text), Err(_)=>{rejected=true;break;} }
+            }
+            assert!(rejected,"credential shape must be rejected without echoing it");
+            assert!(!emitted.contains(value));
+        }
+        let mut d=Decoder::default();
+        let piece=d.accept("openai",&json!({"choices":[{"delta":{"content":"可以分析验证码诈骗，业务编号 12345678901。"}}]}),true).unwrap();
+        assert!(!piece.is_empty(),"ordinary analysis must still stream");
     }
     #[test]
     fn protocol_contracts() {
@@ -161,6 +207,8 @@ pub fn request(
     messages: &[Message],
     stream: bool,
 ) -> Result<(reqwest::Url, Vec<(String, String)>, Value), String> {
+    validate_text(system,key)?;
+    for m in messages {validate_text(&m.content,key)?;}
     if p.model.is_empty()
         || p.model.len() > 200
         || p.name.len() > 100
@@ -245,6 +293,7 @@ pub fn request(
 #[derive(Default)]
 struct Decoder {
     text: String,
+    emitted: usize,
     usage: Option<Value>,
     done: bool,
 }
@@ -347,10 +396,22 @@ impl Decoder {
             return Err("模型未返回文本；拒绝保存空回答".into());
         }
         self.text.push_str(&piece);
+        if contains_credential(&self.text) {
+            return Err("模型输出含可识别凭据，已阻止展示和保存".into());
+        }
         if self.text.len() > 1024 * 1024 {
             return Err("模型输出过大".into());
         }
-        Ok(piece)
+        // Keep the unfinished token across SSE chunks. A split credential must
+        // be checked before any of its value is emitted to the UI.
+        let end = if stream {
+            self.text.char_indices().rev()
+                .find(|(_, c)| !c.is_ascii() || c.is_whitespace() || ",;".contains(*c))
+                .map_or(self.emitted, |(i, c)| i + c.len_utf8())
+        } else { self.text.len() };
+        let safe = self.text[self.emitted..end].to_string();
+        self.emitted = end;
+        Ok(safe)
     }
 }
 
@@ -436,6 +497,7 @@ pub async fn run(
         if decoder.text.trim().is_empty() {
             return Err("模型未返回文本".into());
         }
+        delta(&decoder.text[decoder.emitted..]);
         Ok(Reply {
             text: decoder.text,
             usage: decoder.usage,

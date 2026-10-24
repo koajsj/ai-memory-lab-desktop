@@ -8,7 +8,7 @@
 
 支持 OpenAI Chat Completions、Anthropic Messages、Gemini GenerateContent；第三方服务选择 OpenAI 兼容协议，自填模型 ID。Base URL 填 API 前缀，如 `https://api.openai.com/v1`，不包含 `/chat/completions`。HTTPS 为默认要求；自建本机服务可使用 `http://localhost:端口/v1`。不绕过 TLS 验证，不跟随重定向。兼容服务若不支持 SSE，可关闭“流式回复”。
 
-Key 默认仅保留在 Rust 进程内；选中保存时交给系统凭据库（Windows Credential Manager、macOS Keychain）。模型配置只保存非敏感字段。编辑配置时 Key 留空保留原凭据；新建不需要 Key 的本机服务可留空。不要在聊天中粘贴凭据。
+Key 默认仅保留在 Rust 进程内；选中保存时交给Windows Credential Manager。模型配置只保存非敏感字段。编辑配置时 Key 留空保留原凭据；新建不需要 Key 的本机服务可留空。不要在聊天中粘贴凭据。
 
 内置完整守则来自私有项目根目录 `memory-rules.md`，由 Rust 编译期嵌入，无网络也能读取；公开网页版构建不复制守则全文。自定义 Markdown 导入或粘贴后先显示名称、全文预览及 SHA-256，经确认才用于新实验；导入失败保留已选版本。可还原草稿或恢复内置守则。“查看实验守则”展示当前实验的固定全文、来源与完整哈希；旧记录没有来源登记时显示未记录，不推定为内置版本。
 
@@ -47,4 +47,4 @@ npm run desktop:windows
 
 私有仓库的固定模拟数据只维护 `web-public/src/public-demo.json`；桌面 `data.js` 在构建时生成，并与固定演示评估登记逐字节核对，不维护第二份数据源码。历史评估保留原内核哈希，当前内核源码另按 `source-manifest.json` 核验；哈希匹配只证明构建来源，不代表旧评估验证了新实现。
 
-桌面仅维护 Windows 交付；macOS 开发机使用前端、Python 和原子检查，不再维护 .app 或 DMG 打包。`web-public`、共享前端及公开仓库的 GitHub Pages 部署继续保留，独立运行 `npm --prefix web-public run check` 和 `npm --prefix web-public run build`。Windows 的安装、卸载、升级、凭据库及无开发环境首次启动仍需 Windows 验收；人工视觉、文件面板和 GPU 体验单独确认。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。
+桌面仅交付 Windows 11 x64；`npm run desktop` 也固定使用 Windows 构建入口。macOS 开发机使用共享前端、Python 和原子检查，不生成其他桌面平台的安装包；开发期的主机进程与凭据适配只服务于本地调试，不代表新增交付平台。`web-public`、共享前端及公开仓库的 GitHub Pages 部署继续保留，独立运行 `npm --prefix web-public run check` 和 `npm --prefix web-public run build`。Windows 的安装、卸载、升级、凭据库及无开发环境首次启动仍需 Windows 验收；人工视觉、文件面板和 GPU 体验单独确认。第三方许可证见 THIRD_PARTY_NOTICES.txt 及 Cargo.lock 中组件的许可。

@@ -105,13 +105,17 @@ try{
  assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
  assert.equal(e('context').children.length,1);assert.equal(e('context').selectedOptions.length,0,'model context must be opt-in');
+ assert(e('context-summary').textContent.includes('下次发送不附带长期记忆。'));
  e('context').children[0].selected=true;
+ e('context').onchange();assert(e('context-summary').textContent.includes('1 条'));
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 1 项 · 待处理 0 项'),'saved governance decisions must update the visible round summary');
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
  await e('memories').children[0].click();assert(e('details').children.length>0);
  // A current fact and isolated candidate of the same field must select different versions.
  e('input').value='也许我需要详细回答';await e('composer').onsubmit({preventDefault(){}});
  assert.equal(lastPrepared.pending.admission.memories.length,1,'send the explicitly selected version through core admission');
+ assert(e('context-summary').textContent.includes('本轮请求附带 1 条记忆'));
+ assert(e('context-summary').textContent.includes('下次发送不附带长期记忆。'));
  assert.equal(e('context').selectedOptions.length,0,'memory authorization is per request, not silently reused');
  // Use the actual core to isolate the second proposal, then reopen via the real handler.
  let conflict=service({op:'open',id:rows[0].id});
@@ -217,6 +221,17 @@ try{
  e('input').value='仅为本次回答使用这些偏好';await e('composer').onsubmit({preventDefault(){}});
  assert.equal(lastPrepared.pending.admission.memories.length,2);
  assert.equal(e('context').selectedOptions.length,0,'clear every selected option even when the DOM collection is live');
+ let retained=service({op:'open',id:selectedContext.id});
+ for(let index=0;index<retained.turns.at(-1).candidates.length;index++)retained=service({op:'dismiss',id:retained.id,revision:retained.revision,index});
+ e('experiments').value=retained.id;await e('experiments').onchange();
+ assert.equal(e('context-keep').checked,false);
+ for(const option of e('context').children)option.selected=true;
+ e('context-keep').checked=true;e('input').value='继续按明确选定的两项偏好回答';
+ await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(lastPrepared.pending.admission.memories.length,2);
+ assert.equal(e('context').selectedOptions.length,2,'retain only after explicit opt-in');
+ e('experiments').value=clue.id;await e('experiments').onchange();
+ assert.equal(e('context-keep').checked,false);assert.equal(e('context').selectedOptions.length,0);
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

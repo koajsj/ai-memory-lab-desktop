@@ -28,6 +28,16 @@ fn credential(id: &str) -> Result<keyring::Entry, String> {
     identifier(id)?;
     keyring::Entry::new("AI Memory Lab", id).map_err(|_| "系统凭据存储不可用".into())
 }
+fn model_key(state: &Runtime, id: &str) -> Result<String, String> {
+    if let Some(key) = state.keys.lock().map_err(|_| "凭据状态不可用")?.get(id).cloned() {
+        return Ok(key);
+    }
+    match credential(id)?.get_password() {
+        Ok(key) => Ok(key),
+        Err(keyring::Error::NoEntry) => Ok(String::new()),
+        Err(_) => Err("系统凭据读取失败，请重新配置临时Key".into()),
+    }
+}
 fn worker(root: PathBuf, q: Value) -> Result<Value, String> {
     let mut cmd;
     if cfg!(debug_assertions) {
@@ -200,7 +210,12 @@ async fn service(app: &tauri::AppHandle, q: Value) -> Result<Value, String> {
         .map_err(|_| String::from("内核任务失败"))?
 }
 #[tauri::command]
-pub async fn experiment_call(app: tauri::AppHandle, request: Value) -> Result<Value, String> {
+pub async fn experiment_call(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+    request: Value,
+    profile_id: Option<String>,
+) -> Result<Value, String> {
     if !matches!(
         request["op"].as_str(),
         Some(
@@ -220,6 +235,13 @@ pub async fn experiment_call(app: tauri::AppHandle, request: Value) -> Result<Va
         )
     ) {
         return Err("操作未授权".into());
+    }
+    if request["op"] == "prepare" {
+        let id = profile_id.ok_or("发送前请选择模型配置")?;
+        identifier(&id)?;
+        let _gate = state.profiles.lock().await;
+        let key = model_key(&state, &id)?;
+        model_api::validate_text(request["input"].as_str().ok_or("输入无效")?, &key)?;
     }
     service(&app, request).await
 }
@@ -417,8 +439,7 @@ pub async fn model_request(
  let rows=service(&app,json!({"op":"profiles"})).await?;
  let row=rows.as_array().and_then(|a|a.iter().find(|p|p["id"]==id)).ok_or("模型配置不存在")?;
  let profile:Profile=serde_json::from_value(json!({"name":row["name"],"protocol":row["protocol"],"base_url":row["base_url"],"model":row["model"]})).map_err(|_|"模型配置无效")?;
- let key=state.keys.lock().map_err(|_|"凭据状态不可用")?.get(&id).cloned();
- let key=match key {Some(k)=>k,None=>match credential(&id)?.get_password(){Ok(k)=>k,Err(keyring::Error::NoEntry)=>String::new(),Err(_)=>return Err("系统凭据读取失败，请重新配置临时Key".into())}};
+ let key=model_key(&state,&id)?;
  drop(gate);
  // Do not emit raw deltas that could echo the credential. Buffer a key-length tail.
  let mut tail=String::new();let mut result=model_api::run(&profile,&key,&system,&messages,stream,|piece|{

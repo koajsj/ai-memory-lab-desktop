@@ -8,6 +8,8 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 SAFE_ERRORS = {
+    '检测到敏感内容或凭据，请先脱敏；未保存或发送',
+    '实验内核与保存状态不一致',
     '实验达到8MB容量，请导出后新建',
     '实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。',
 }

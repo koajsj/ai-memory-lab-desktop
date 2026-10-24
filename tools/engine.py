@@ -15,13 +15,28 @@ BLOCKED = {'bank_account','id_number','phone','password','verification_code','ot
            'access_token','token','api_key','secret_key','private_key','rules','system_prompt','user_md'}
 KEY = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 
+def blocked_key(value):
+    key=re.sub(r'([a-z0-9])([A-Z])',r'\1_\2',unicodedata.normalize('NFKC',str(value))).lower()
+    key=re.sub(r'[^a-z0-9\u4e00-\u9fff]+','_',key).strip('_')
+    aliases=BLOCKED|{'mobile','mobile_phone','mobile_number','phone_number','telephone','cellphone','contact_number',
+                    'contact_details','contact_info','identity_number','identity_card','bank_card',
+                    'bank_card_number','bank_account_number','id_card','id_card_number','account_password','passcode','api_token','auth_token','bearer_token',
+                    'client_secret','session_cookie','手机号','手机号码','电话','联系方式','身份证号','银行卡号','银行账号','密码','验证码','密钥','访问令牌','私钥'}
+    return key in aliases or any(key.endswith('_'+name) for name in aliases)
+
+def credentials(value):
+    text=unicodedata.normalize('NFKC',str(value))
+    return bool(re.search(r'(?:https?://[^\s/@:]+:[^\s/@]+@|\bsk-[A-Za-z0-9_-]{16,}|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{15,})|\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|(?:password|api[_ -]?key|access[_ -]?token|client[_ -]?secret|密码|验证码)\s*[=:：]\s*[\"\']?[A-Za-z0-9_~+/-]{4,})',text,re.I))
+
 def sensitive(value):
     text = unicodedata.normalize('NFKC', str(value))
-    return bool(re.search(r'(?<!\d)(?:\d[\s-]*){13,}(?:[xX])?(?!\d)', text))
+    return credentials(text) or bool(re.search(r'(?<!\d)(?:\d[\s-]*){13,}(?:[xX])?(?!\d)|(?:手机号?|手机号码|电话|联系方式|contact[_ -]?phone|phone(?:[_ -]?number)?|mobile)\s*[\"\']?\s*[:=：]?\s*[\"\']?\s*(?:\+?86[ -]?)?1[3-9]\d{9}(?!\d)', text,re.I))
 
 def unsafe_fact(payload):
     """业务编号须由可信提取端明确分类；不豁免来源等元数据或高敏类别。"""
     business=payload.get('data_type')=='business_identifier'
+    if ('key' in payload and blocked_key(payload['key'])) or credentials(json.dumps(payload,ensure_ascii=False)):
+        return True
     if business and not re.fullmatch(r'[A-Za-z0-9._:/-]{1,80}',payload.get('value','')):
         return True
     checked={k:v for k,v in payload.items() if k!='version' and not (business and k=='value')}
@@ -100,7 +115,7 @@ class Store(Governance):
         out={s:{} for s in STATES}
         for row in self.db.execute('SELECT key,state,payload FROM facts WHERE role=? ORDER BY key',(role,)):
             base=row['key'].removesuffix('__previous') if isinstance(row['key'],str) else ''
-            if (not KEY.fullmatch(base) or base in BLOCKED
+            if (not KEY.fullmatch(base) or blocked_key(base)
                     or (row['key'].endswith('__previous') and row['state']!='history')):
                 raise ValueError('存储事实键不合法或属于禁存类别，拒绝读取')
             payload=parse_json(row['payload'])
@@ -172,7 +187,7 @@ class Store(Governance):
                 key=op.get('key')
                 if not isinstance(key,str) or not KEY.fullmatch(key) or key.endswith('__previous'):
                     raise ValueError('事实键不合法或属于内部归档保留字段')
-                if key in BLOCKED:
+                if blocked_key(key):
                     decisions.append(self.decision('REJECT','禁存字段或规则修改')); continue
                 if kind=='review':
                     if set(op)-{'op','key'}: raise ValueError('复核操作不能附带其他数据')

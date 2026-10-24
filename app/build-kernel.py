@@ -1,4 +1,4 @@
-"""Build the existing Python authority as a self-contained native sidecar, never cross-compile."""
+"""Build the Windows x64 governance sidecar; archive audits remain host-independent."""
 from pathlib import Path
 import hashlib
 import json
@@ -31,19 +31,19 @@ def archive_inventory(binary, *, reader=None):
 def main():
     if len(sys.argv)==3 and sys.argv[1]=='--audit':
         print(json.dumps(archive_inventory(Path(sys.argv[2])),indent=2));return
+    if sys.platform!='win32':raise SystemExit('交付内核仅在Windows x64原生构建；其他开发机使用Python源码和原子检查')
     host=subprocess.check_output(['rustc','-vV'],text=True).split('host: ',1)[1].splitlines()[0]
-    if sys.platform=='win32' and (platform.machine().upper() not in ('AMD64','X86_64') or host!='x86_64-pc-windows-msvc'):raise SystemExit('Windows交付需要原生x64 Python和MSVC工具链')
+    if platform.machine().upper() not in ('AMD64','X86_64') or host!='x86_64-pc-windows-msvc':raise SystemExit('Windows交付需要原生x64 Python和MSVC工具链')
     import PyInstaller
-    if PyInstaller.__version__!='6.16.0':raise SystemExit('请使用PyInstaller==6.16.0及Python3.10–3.14构建（macOS本地检查也支持3.9）')
+    if PyInstaller.__version__!='6.16.0':raise SystemExit('请使用PyInstaller==6.16.0及Windows x64 Python3.10–3.14构建')
     out=APP/'src-tauri/binaries';out.mkdir(exist_ok=True)
     with TemporaryDirectory(prefix='memory-kernel-build-') as tmp:
         tmp=Path(tmp);entry=tmp/'entry.py'
         entry.write_text('from tools.desktop_service import main\nraise SystemExit(main())\n',encoding='utf-8')
         subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--onefile','--console','--noupx','--name','memory-kernel','--paths',str(ROOT),'--distpath',str(tmp/'dist'),'--workpath',str(tmp/'work'),'--specpath',str(tmp),str(entry)],check=True,cwd=ROOT)
-        suffix='.exe' if sys.platform=='win32' else ''
-        binary=tmp/'dist'/('memory-kernel'+suffix)
+        binary=tmp/'dist/memory-kernel.exe'
         inventory=archive_inventory(binary) # Reject oversize/invalid archives before replacing a valid worker.
-        target=out/('memory-kernel-'+host+suffix)
+        target=out/('memory-kernel-'+host+'.exe')
         # Atomic replacement of this generated sidecar; never touch user experiments.
         staged=target.with_suffix(target.suffix+'.new');staged.write_bytes(binary.read_bytes());staged.chmod(0o755);os.replace(staged,target)
         files=['app/build-kernel.py','tools/desktop_service.py','tools/engine.py','tools/governance.py','tools/json_input.py']

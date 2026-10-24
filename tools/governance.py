@@ -149,7 +149,10 @@ class Governance:
 
     def _record(self,row):
         if row is None:return None
+        from .engine import unsafe_fact
         meta=parse_json(row['meta']);payload=parse_json(row['payload']) if row['payload'] else None
+        if payload is not None and unsafe_fact(dict(payload,key=row['key'])):
+            raise ValueError('版本载荷含敏感内容，拒绝读取与导出')
         if (meta.get('memory_id')!=mid(row['role'],row['key']) or meta.get('role')!=row['role'] or meta.get('owner')!=row['role']
                 or meta.get('scope') not in ('role','conversation') or meta.get('authority_class') not in ('direct','external','unknown')
                 or not isinstance(meta.get('roots'),list) or not 1<=len(meta['roots'])<=128

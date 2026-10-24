@@ -319,8 +319,11 @@ def test_rule_provenance_is_frozen_and_legacy_remains_readable(service):
     del legacy['turns'][0]['candidates'][0]['basis']
     service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(legacy,ensure_ascii=False),legacy['id']));service.db.commit()
     assert service.call({'op':'open','id':legacy['id']})==legacy
-    legacy=service.call({'op':'decide','id':legacy['id'],'revision':legacy['revision'],'index':0,'confirm':True})
-    assert legacy['snapshot']['current']['preference']['value']=='喜欢短回答'
+    with pytest.raises(ValueError,match='依据类型'):
+        service.call({'op':'decide','id':legacy['id'],'revision':legacy['revision'],'index':0,'confirm':True})
+    assert service.call({'op':'open','id':legacy['id']})==legacy
+    legacy=service.call({'op':'dismiss','id':legacy['id'],'revision':legacy['revision'],'index':0})
+    assert not any(legacy['snapshot'].values())
 
 def test_candidate_lineage_and_delete_cascade(service):
     exp=finish(service,create(service),text='待核实线索')
@@ -414,6 +417,7 @@ def test_replay_export_accepts_hash_digits_but_not_sensitive_content(tmp_path,mo
     with pytest.raises(ValueError):r.export(result,tmp_path/'export')
 
 def test_submission_typed_digest_and_new_runtime(tmp_path):
+    import hashlib
     from tools.check_submission import inspect
     stage=tmp_path/'stage';(stage/'app').mkdir(parents=True)
     data={'policy':{'version':'V3.3','sha256':'a'+'1234567890123'+'b'*50},'frames':[]}
@@ -425,6 +429,15 @@ def test_submission_typed_digest_and_new_runtime(tmp_path):
     data['frames']=[{'input':'1234567890123'}]
     (stage/'app/data.js').write_text('window.REPLAY_DATA='+json.dumps(data)+';\n')
     assert any(e.startswith('app/data.js：') for e in inspect(stage))
+    # Current delivery accepts Windows installers only; historical records live
+    # outside this current submission manifest and keep their original bytes.
+    (stage/'app/assets-manifest.json').write_text(json.dumps({'files':{}}))
+    for suffix,accepted in [('.exe',True),('.msi',True),('.dmg',False),('.AppImage',False),('.deb',False),('.rpm',False)]:
+        payload=stage/'app'/('setup'+suffix);payload.write_bytes(b'synthetic installer fixture')
+        digest=hashlib.sha256(payload.read_bytes()).hexdigest()
+        (stage/'app/desktop-manifest.json').write_text(json.dumps({'application':'AI Memory Lab','assets':{},'files':{payload.name:digest}}))
+        assert ('桌面安装包清单或完整性异常' not in inspect(stage)) is accepted
+        payload.unlink()
 
 
 def test_expiry_cannot_reenter_prompt_through_old_chat(service,monkeypatch):
@@ -518,9 +531,10 @@ def test_failed_reply_save_keeps_original_pending_state(service):
     assert recovered['turns'][-1]['status']=='interrupted'
 
 # Packaging budgets apply to the real onefile payload, not a renamed launcher.
-def test_kernel_packaging_budget_and_inventory(tmp_path):
+def test_kernel_packaging_budget_and_inventory(tmp_path,monkeypatch):
     import runpy
-    inspect = runpy.run_path(str(Path(__file__).resolve().parents[1]/'app/build-kernel.py'))['archive_inventory']
+    module = runpy.run_path(str(Path(__file__).resolve().parents[1]/'app/build-kernel.py'))
+    inspect = module['archive_inventory']
     class Archive:
         def __init__(self, path):
             self.toc = {'python312.dll': (0, 30, 90, 1, 'b'), 'PYZ.pyz': (30, 20, 20, 0, 'z')}
@@ -541,6 +555,14 @@ def test_kernel_packaging_budget_and_inventory(tmp_path):
         inspect(binary, reader=Archive)
     with pytest.raises(FileNotFoundError):
         inspect(tmp_path/'missing.exe', reader=Archive)
+    # Host-independent archive inspection stays available, but no cancelled
+    # desktop target may produce a delivery kernel.
+    for host in ('darwin','linux'):
+        with monkeypatch.context() as patch:
+            patch.setattr(sys,'platform',host)
+            patch.setattr(sys,'argv',['build-kernel.py'])
+            with pytest.raises(SystemExit,match='Windows'):
+                module['main']()
 
 
 @pytest.mark.parametrize('operation',['delete','retire'])
@@ -567,3 +589,101 @@ def test_scope_checks_cover_history_and_derived_cleanup(tmp_path,operation):
         assert store.export_governance(narrow)==audit
         store.apply(narrow,{'seq':5,'ops':[{'op':operation,'key':'basis'}]})
         assert not store.read(narrow,narrow.role)['current']
+
+
+def test_sensitive_aliases_and_credentials_never_reach_candidate_storage(service):
+    # Synthetic values assembled here; assertion output must not echo them.
+    from tools.engine import unsafe_fact, Store, Context
+    token='sk-'+('SyntheticOnly' * 3)
+    cases=[('contact_phone','138'+'00000000'),('apiKey','not-a-real-key'),('note',token),
+           ('note','Bearer '+('synthetic' * 4)),('note','eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljU2lnbmF0dXJl'),
+           ('note','-----BEGIN PRIVATE KEY-----\nsynthetic\n-----END PRIVATE KEY-----')]
+    for key,value in cases:
+        assert unsafe_fact({'key':key,'value':value}), 'sensitive alias or credential was not detected'
+        exp=finish(service,create(service),candidates=[{'op':'set','key':key if key!='apiKey' else 'contact_api_key','value':value}])
+        assert exp['turns'][-1]['candidates'][0].get('erased') is True
+        assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
+        raw=service.db.execute('SELECT state FROM experiments WHERE id=?',(exp['id'],)).fetchone()[0]
+        assert value not in raw, 'rejected candidate payload persisted'
+        out=service.call({'op':'export','id':exp['id'],'sections':['turns','memory']})
+        assert value not in json.dumps(out), 'rejected payload exported'
+    for value in ('12345678901','d0cf297e-36a4-4e1c-8b96-62fb3e7bc38f','f'*64):
+        assert not unsafe_fact({'key':'order_reference','value':value})
+    assert not unsafe_fact({'key':'invoice_reference','value':'1234567890123456','data_type':'business_identifier'})
+    exp=finish(service,create(service),candidates=[{'op':'set','key':'note','value':'普通文字','ttl':token}])
+    assert token not in service.db.execute('SELECT state FROM experiments WHERE id=?',(exp['id'],)).fetchone()[0]
+    assert service.call({'op':'open','id':exp['id']})['turns'][-1]['candidates'][0].get('erased') is True
+    with Store(service.root/'direct.sqlite') as store:
+        result=store.apply(Context('owner','LOCAL',True),{'seq':1,'ops':[{'op':'set','key':'note','value':token}]})
+        assert result['decisions'][0]['action']=='REJECT'
+        assert not any(store.read(Context('owner','LOCAL',True),'LOCAL').values())
+
+
+def test_credentials_are_blocked_before_prompt_save_and_recovery(service):
+    token='sk-'+('SyntheticOnly' * 3)
+    exp=create(service)
+    with pytest.raises(ValueError,match='敏感|凭据'):
+        service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析 '+token,'request_id':'secret','model':{}})
+    assert service.call({'op':'open','id':exp['id']})==exp
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析攻击手法，不执行','request_id':'clean','model':{}})
+    with pytest.raises(ValueError,match='敏感|凭据'):
+        service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'clean','reply':token,'candidates':[]})
+    assert service.call({'op':'open','id':exp['id']})['pending'] is not None
+    # A prior unsafe transcript is preserved in storage but cannot be reopened/exported/used.
+    p['pending']['input']=token
+    service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(p),p['id']));service.db.commit()
+    for op in ('open','export'):
+        with pytest.raises(ValueError,match='敏感|凭据'):
+            service.call({'op':op,'id':p['id'],'sections':['turns']})
+
+
+def test_digest_does_not_skip_catalog_projection_validation(service):
+    exp=finish(service,create(service))
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    original=service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()
+    for fault in ('snapshot','governance','frames','history'):
+        bad=json.loads(original[0])
+        if fault=='snapshot':bad['snapshot']['current']['preference']['value']='未提交的目录值'
+        elif fault=='governance':bad['governance']['versions'][0]['parents']=['OTHER/unknown/1']
+        elif fault=='history':bad['frames'][0]['after']['current']['preference']['value']='历史投影中的假值'
+        else:bad['frames']=[]
+        encoded=json.dumps(bad)
+        service.db.execute('UPDATE experiments SET state=? WHERE id=?',(encoded,exp['id']));service.db.commit()
+        for op in ('open','rename','export'):
+            with pytest.raises(ValueError,match='不一致|结构|格式'):
+                service.call({'op':op,'id':exp['id'],'revision':exp['revision'],'name':'不可覆盖','sections':['memory']})
+        assert service.db.execute('SELECT state,core FROM experiments WHERE id=?',(exp['id'],)).fetchone()==(encoded,original[1])
+    service.db.execute('UPDATE experiments SET state=? WHERE id=?',(original[0],exp['id']));service.db.commit()
+    assert service.call({'op':'open','id':exp['id']})==exp
+
+
+def test_final_decision_revalidates_legacy_candidate_basis(service):
+    exp=finish(service,create(service))
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    exp=finish(service,exp,candidates=[{'op':'delete','key':'preference'}])
+    for basis in (None,'unknown'):
+        bad=json.loads(json.dumps(exp))
+        if basis is None:bad['turns'][-1]['candidates'][0].pop('basis')
+        else:bad['turns'][-1]['candidates'][0]['basis']=basis
+        service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(bad),exp['id']));service.db.commit()
+        with pytest.raises(ValueError,match='依据类型'):
+            service.call({'op':'decide','id':bad['id'],'revision':bad['revision'],'index':0,'confirm':True})
+        assert service.call({'op':'open','id':bad['id']})['snapshot']==exp['snapshot']
+    dismissed=service.call({'op':'dismiss','id':bad['id'],'revision':bad['revision'],'index':0})
+    assert dismissed['snapshot']==exp['snapshot']
+
+
+def test_context_budget_audit_matches_actual_prompt(service):
+    exp=create(service)
+    for group in range(2):
+        exp=finish(service,exp,candidates=[{'op':'set','key':f'item_{group}_{i}','value':chr(65+group)*500} for i in range(16)])
+        for i in range(16):exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':i,'confirm':True})
+    selected=[r['version_id'] for r in exp['governance']['versions']][:32]
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'检查预算','request_id':'budget','model':{},'memory_versions':selected})
+    admission=p['pending']['admission']
+    sent=[m['version_id'] for m in p['prompt']['allowed']]
+    assert [m['version_id'] for m in admission['memories']]==sent
+    assert admission['requested_versions']==selected
+    assert set(sent)|{m['version_id'] for m in admission['omitted']}==set(selected)
+    assert len(json.dumps(p['prompt']['allowed'],ensure_ascii=False,separators=(',',':')))<=16000
+    assert admission['omitted'] and all(m['reason']=='context_budget' for m in admission['omitted'])

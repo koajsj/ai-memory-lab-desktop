@@ -51,11 +51,16 @@ const guide=[
  ['开始对话','创建实验并发送消息。AI 回复与候选会分别保存，候选须经内核裁决。','准备第一条消息'],
  ['查看结果','在记忆演化中比较前后变化，在三维图谱中查看真实登记的关系。','查看记忆演化']
 ];
-const call=request=>invoke('experiment_call',{request});
+const call=request=>invoke('experiment_call',{request,...(request.op==='prepare'?{profileId}: {})});
 const button=(text,action)=>{const b=doc.createElement('button');b.textContent=text;b.type='button';b.setAttribute('data-idle','');b.onclick=()=>guard(action);return b;};
 const text=(tag,value)=>{const el=doc.createElement(tag);el.textContent=value??'未记录';return el;};
 const notice=message=>{ui.status.textContent=message;};
 function clearPreview(){ui.live.replaceChildren();ui.live.hidden=true;}
+function contextSummary(){
+ const count=ui.context.selectedOptions.length,turn=exp?.turns[frameIndex];
+ const actual=turn?.admission?`本轮${turn.status==='complete'?'请求附带':'准备'} ${turn.admission.memories.length} 条记忆${turn.status==='complete'?'':'（发送完成未确认）'}；`:'';
+ ui.contextSummary.textContent=actual+(count?`下次选择 ${count} 条，发送前重新校验。`:'下次发送不附带长期记忆。');
+}
 async function guard(action){
  if(working)return;
  working=true;busy(true);
@@ -97,10 +102,14 @@ async function recoverSaved(id,error){
 }
 async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');const id=exp.id;try{exp=await call({op,id,revision:exp.revision,...extra});}catch(error){await recoverSaved(id,error);}frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
 function render(){
- const chosen=new Set(contextExperiment===exp?.id?Array.from(ui.context.selectedOptions,o=>o.value):[]);
+ const sameContext=contextExperiment===exp?.id;
+ const chosen=new Set(sameContext?Array.from(ui.context.selectedOptions,o=>o.value):[]);
  contextExperiment=exp?.id??null;
  const choices=(exp?.governance.versions||[]).filter(r=>r.payload&&['current','completed'].includes(r.lifecycle)&&exp.snapshot[r.part]?.[r.key]?.version===r.revision);
- ui.context.replaceChildren(...choices.map(r=>{const o=new Option(`${root.MemoryModel.label(r.key)}：${r.payload.value} · ${root.MemoryModel.states[r.part]?.name||r.part}`,r.version_id);o.selected=chosen.has(r.version_id);return o;}));
+ choices.sort((a,b)=>Number(b.part==='current'&&b.payload.kind==='task')-Number(a.part==='current'&&a.payload.kind==='task'));
+ if(!sameContext)ui.contextKeep.checked=false;
+ ui.context.replaceChildren(...choices.map(r=>{const o=new Option(`${r.part==='current'&&r.payload.kind==='task'?'待办 · ':''}${root.MemoryModel.label(r.key)}：${r.payload.value} · ${root.MemoryModel.states[r.part]?.name||r.part}`,r.version_id);o.selected=chosen.has(r.version_id);return o;}));
+ contextSummary();
  ui.contextPanel.hidden=!choices.length;
  ui.title.textContent=view==='setup'?'开始实验':exp?.name||'尚未创建实验';
  ui.currentRules.hidden=!exp;ui.policyView.hidden=!exp;
@@ -122,6 +131,9 @@ function render(){
  if(view==='evolution'){const d=doc.createElement('details');d.append(text('summary','查看本轮 AI 回复'),...reply);ui.conversation.append(d);}else ui.conversation.append(...reply);
  if(frame&&view==='evolution'){ui.conversation.append(text('h2','本轮实际变化'));if(!['added','changed','removed'].some(k=>frame.diff[k].length))ui.conversation.append(text('p','本轮记忆快照没有变化，原因以实际裁决记录为准。'));for(const d of frame.decisions)ui.conversation.append(text('p',operationName(d.action)+'：'+d.reason));for(const kind of ['added','changed','removed'])for(const path of frame.diff[kind]){const [part,key]=path.split('.');const old=frame.before[part]?.[key]?.value,next=frame.after[part]?.[key]?.value;ui.conversation.append(text('p',`${root.MemoryModel.label(key)}：${old??'未记录 / 已清除'} → ${next??'退出 / 已清除'}`));}}
  const usage=doc.createElement('details');usage.append(text('summary','模型与用量'),text('p',turn.model?.model?'本轮模型：'+(turn.model.name||'未记录')+' · '+turn.model.model:'本轮模型未记录'),text('small',turn.usage?'回复 Token：'+JSON.stringify(turn.usage):'回复 Token 用量未知'));ui.conversation.append(usage);
+ const admission=turn.admission;
+ if(turn.history_rounds)usage.append(text('p','实际附带聊天轮次：'+(turn.history_rounds.join('、')||'无')));
+ if(admission){usage.append(text('p',`实际附带记忆 ${admission.memories.length} 条`));for(const m of admission.memories)usage.append(text('p',`${root.MemoryModel.label(m.key)} · ${m.version_id} · ${root.MemoryModel.states[m.part]?.name||m.part}`));for(const m of admission.omitted||[])usage.append(text('p',`${m.version_id}：因上下文预算未发送`));}
  if(!turn.assessment)usage.append(text('small','风险观察未记录，不代表已确认安全。'));
  if(turn.extraction_error)ui.conversation.append(text('p','候选提取失败；回复已保存，没有提交记忆。'));
  if(turn.assessment){const a=turn.assessment,d=doc.createElement('details');d.open=a.signals.length>0;d.append(text('summary','模型风险观察 · 未经独立核实'));if(a.signals.length)d.append(text('p',a.signals.join('、')));d.append(text('p',a.reason),text('p',a.next_step));ui.conversation.append(d);}
@@ -133,11 +145,13 @@ function render(){
   const conditions=doc.createElement('details');conditions.append(text('summary','建议的完整条件'),text('pre',JSON.stringify(c,null,2)));row.append(conditions);
   const result=turn.results[String(index)];if(result)for(const d of result.decisions)row.append(text('p',operationName(d.action)+'：'+d.reason));
   else if(frameIndex===exp.turns.length-1){
-   if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference')){
+   if(!['self_report','external','inference'].includes(c.basis)){
+    row.append(text('p','此旧建议的依据类型缺失或无效，不能裁决。请忽略后重新提出。'),button('忽略',()=>mutate('dismiss',{index})));
+   }else if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference')){
     row.append(text('p','外部主张或推断不能充当操作授权，也不因重复或确认按钮变成已核实事实。'),button(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed'?'保留为待核实线索':'核验操作依据',()=>mutate('decide',{index,confirm:false})),button('忽略',()=>mutate('dismiss',{index})));
    }else{
    if(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed')row.append(button('仅存入待核实区',()=>mutate('decide',{index,confirm:false})));
-   row.append(button(c.op==='delete'?'授权删除':c.reactivate?'确认新依据并重新建立':'本人确认并交由内核裁决',async()=>{if(root.confirm(c.op==='delete'?'删除本实验内该记忆及受影响派生，清除可控快照原值。原始对话与既有导出不会被删除。确认？':c.reactivate?'仅在你现在提供了独立、明确的新依据时重新建立；不能以旧记录或旧摘要恢复已删除内容。确认？':'仅当你已核实这项建议及其完整条件时确认。确认只提供本实验的来源依据，仍须接受内核校验。'))await mutate('decide',{index,confirm:true});}),button('忽略',()=>mutate('dismiss',{index})));
+   row.append(button(c.op==='delete'?'授权删除':c.reactivate?'确认新依据并重新建立':'本人确认并交由内核裁决',async()=>{if(root.confirm(c.op==='delete'?'仅当这是你本人当前的删除意图才确认；模型的来源标记不能证明授权。删除本实验内该记忆及受影响派生，原始对话与既有导出不受影响。确认？':c.reactivate?'仅在你现在提供了独立、明确的新依据时重新建立；不能以旧记录或旧摘要恢复已删除内容。确认？':'仅当这是你本人的陈述或操作意图，且你已核对全部条件时确认。模型标记不证明来源；确认不使外部事实变真，仍须接受内核校验。'))await mutate('decide',{index,confirm:true});}),button('忽略',()=>mutate('dismiss',{index})));
    }
   }ui.conversation.append(row);
  }
@@ -173,9 +187,9 @@ function createDialog(){
  <p>选择或编辑守则只影响新实验。守则仅作为本实验的治理配置，不能扩大应用权限；实际写入由内核裁决。</p><details id="nl-current-rules" hidden><summary>当前实验的固定守则</summary><p id="nl-current-rules-hash" class="native-digest"></p><pre id="nl-current-rules-text"></pre></details></details></div>
  <div class="native-create"><label>新实验名称<input id="nl-name" placeholder="例如：偏好更正实验" maxlength="80" data-idle></label><button id="nl-new" data-idle>创建实验</button><span id="nl-create-summary"></span></div></section>
  <div id="nl-workspace" class="native-workspace" hidden><section><div class="native-view"><select id="nl-filter" aria-label="记忆状态筛选" data-idle><option value="all">全部状态</option><option value="current">当前</option><option value="task">未完成任务</option><option value="completed">已完成</option><option value="pending">待核实</option><option value="history">历史</option><option value="retired">已退出</option></select><button id="nl-fit" data-idle>全景</button><span id="nl-graph-note"></span></div><section id="nl-live" class="native-live" aria-label="当前模型响应（尚未保存）" hidden></section><div id="nl-conversation" class="native-conversation"></div><div id="nl-graph" class="native-graph" hidden></div></section><aside><h2>处理后的记忆</h2><div id="nl-memories"></div><div id="nl-details"></div></aside></div>
- <footer id="nl-footer" hidden><div class="native-round"><span id="nl-round"></span><input id="nl-position" type="range" min="0" max="0" value="0" aria-label="实验轮次" data-idle></div><small id="nl-model-summary"></small><details id="nl-context-panel" hidden><summary>本轮附带的记忆</summary><label>仅发送所选记忆，仍须通过内核准入；默认不附带。可用 Ctrl / Command 多选。<select id="nl-context" multiple size="3" data-idle></select></label></details><form id="nl-composer"><textarea id="nl-input" rows="2" aria-label="发送给模型的消息" placeholder="输入消息；Enter 发送，Shift + Enter 换行" data-idle></textarea><button id="nl-send" data-idle>发送</button><button id="nl-cancel" type="button" disabled>取消请求</button></form><small>模型建议 → 本人确认或隔离 → 内核裁决 → 本机保存。删除记忆不等于删除原始聊天。</small></footer>`;
+ <footer id="nl-footer" hidden><div class="native-round"><span id="nl-round"></span><input id="nl-position" type="range" min="0" max="0" value="0" aria-label="实验轮次" data-idle></div><small id="nl-model-summary"></small><small id="nl-context-summary" role="status"></small><details id="nl-context-panel" hidden><summary>本轮附带的记忆</summary><label>仅发送所选记忆，仍须通过内核准入；默认不附带。可用 Ctrl / Command 多选。<select id="nl-context" multiple size="3" data-idle></select></label><label><input id="nl-context-keep" type="checkbox" data-idle>保持本实验的选择（每轮重新校验）</label><small>待办优先列出；历史记忆检索暂不支持。最近聊天仍按时效与容量裁剪。</small></details><form id="nl-composer"><textarea id="nl-input" rows="2" aria-label="发送给模型的消息" placeholder="输入消息；Enter 发送，Shift + Enter 换行" data-idle></textarea><button id="nl-send" data-idle>发送</button><button id="nl-cancel" type="button" disabled>取消请求</button></form><small>模型建议 → 本人确认或隔离 → 内核裁决 → 本机保存。删除记忆不等于删除原始聊天。</small></footer>`;
  doc.body.append(dialog);
- for(const id of ['context', 'context-panel', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
+ for(const id of ['context', 'context-panel', 'context-summary', 'context-keep', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('cancel',e=>{e.preventDefault();if(!working)leave();});
  const bind=(name,fn)=>ui[name].addEventListener('click',()=>guard(fn));
  bind('close',leave);
@@ -205,7 +219,7 @@ function createDialog(){
  bind('sample',()=>{dismissGuide();leave();root.dispatchEvent(new Event('memory-native-sample'));root.MemoryWorkspace?.restore(root.MemoryModel.adapt(root.REPLAY_DATA));root.MemoryWorkspace?.view('graph');});
  bind('recover',()=>mutate('abort',{request_id:exp.pending.request_id,status:'interrupted'}));
  bind('export',async()=>{if(!exp)throw Error('请先打开实验');const sections=['rules','memory','turns'].filter(x=>dialog.querySelector('#nl-export-'+x).checked);if(!sections.length)throw Error('请选择导出范围');notice(await invoke('export_experiment',{id:exp.id,sections})?'已保存所选实验数据。':'已取消导出。');});
- bind('startView',()=>setView('setup'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>setView('graph'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;
+ bind('startView',()=>setView('setup'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>setView('graph'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;ui.context.onchange=contextSummary;
  ui.position.oninput=()=>{frameIndex=Number(ui.position.value);render();};
  ui.composer.onsubmit=e=>{e.preventDefault();return guard(async()=>{
   if(!exp)throw Error('请新建实验');
@@ -219,7 +233,7 @@ function createDialog(){
   try{
    notice('正在请求模型；尚未提交记忆。');
    exp=await running.send(exp,{...profile,stream:ui.stream.checked},input,Array.from(ui.context.selectedOptions,o=>o.value));saved=true;
-   for(const option of Array.from(ui.context.selectedOptions))option.selected=false;
+   if(!ui.contextKeep.checked)for(const option of Array.from(ui.context.selectedOptions))option.selected=false;
    ui.input.value='';frameIndex=exp.frames.length-1;render();
    notice(exp.turns.at(-1).candidates.length?'对话已保存。请逐项确认、隔离或忽略模型建议，再开始下一轮。':'对话已保存，本轮没有待处理建议。');
   }catch(error){

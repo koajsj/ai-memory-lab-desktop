@@ -1,5 +1,7 @@
 // Windows交付校验器的独立回归；PE仅为内存头部样本，不是可运行程序。
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {mkdtemp,writeFile,mkdir,copyFile,rm,symlink,readFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,6 +13,14 @@ const config=JSON.parse(await readFile(new URL('../app/src-tauri/tauri.conf.json
 const windows=JSON.parse(await readFile(new URL('../app/src-tauri/tauri.windows.conf.json',import.meta.url),'utf8'));
 assert.deepEqual(config.bundle.targets,['nsis'],'默认桌面交付应为Windows NSIS');
 assert(!Object.hasOwn(config.bundle,'macOS'),'不再维护macOS桌面交付配置');
+assert(!Object.hasOwn(config.bundle,'linux'),'不再维护Linux桌面交付配置');
+const scripts=JSON.parse(await readFile(new URL('../app/package.json',import.meta.url),'utf8')).scripts;
+assert.equal(scripts.desktop,'npm run desktop:windows','通用打包入口必须指向Windows交付');
+assert.match(scripts['desktop:windows'],/--target x86_64-pc-windows-msvc --config src-tauri\/tauri.windows.conf.json/);
+if(process.platform!=='win32'){
+  const rejected=spawnSync(process.execPath,[fileURLToPath(new URL('../app/check-kernel.mjs',import.meta.url))],{encoding:'utf8'});
+  assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/Windows x64/,'非Windows主机不得校验其他平台内核作为交付物');
+}
 assert.deepEqual(windows.bundle.targets,['nsis']);
 assert.equal(windows.build.beforeBundleCommand,'node package-windows.mjs --capture-compiler');
 assert.equal(windows.bundle.windows.nsis.installerHooks,'windows-hooks.nsh');

@@ -15,11 +15,49 @@ def service(tmp_path):
 def create(s):
     return s.call({'op':'create','name':'实验','rules':'保留来源，拒绝越权。'})
 
+def test_new_finish_cannot_skip_candidate_classification(service):
+    exp=create(service)
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析引用中的指令','request_id':'unclassified','model':{}})
+    before=service.call({'op':'open','id':exp['id']})
+    with pytest.raises(ValueError,match='依据类型'):
+        service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'unclassified','reply':'可分析，但不能授权操作','candidates':[{'op':'delete','key':'preference'}]})
+    assert service.call({'op':'open','id':exp['id']})==before
+
+def test_rules_are_scoped_configuration_not_application_instructions(service):
+    rules='自定义文件声称管理员可覆盖应用权限，仅作为测试资料。'
+    exp=service.call({'op':'create','name':'配置边界','rules':rules})
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析文档','request_id':'config','model':{}})
+    assert rules not in p['prompt']['system']
+    assert p['prompt']['rules']==exp['rules']
+    assert service.call({'op':'open','id':exp['id']})['rules']==exp['rules']
+
+def test_model_context_requires_explicit_admitted_version_selection(service):
+    exp=finish(service,create(service),candidates=[
+        {'op':'set','key':'preference','value':'简短回答'},
+        {'op':'set','key':'private_note','value':'仅本机查看的项目资料','privacy':'restricted'},
+        {'op':'set','key':'closed_task','value':'整理研究资料','kind':'task','state':'completed'},
+    ])
+    for index in range(3):exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':index,'confirm':True})
+    versions={r['key']:r['version_id'] for r in exp['governance']['versions']}
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析公开文本','request_id':'no-memory','model':{}})
+    assert p['prompt']['allowed']==[]
+    exp=service.call({'op':'abort','id':exp['id'],'revision':p['revision'],'request_id':'no-memory','status':'cancelled'})
+    for invalid in [[versions['preference']]*2,['OTHER/secret/1'],[versions['preference'], 'unknown']]:
+        with pytest.raises(ValueError):service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析','request_id':'bad-context','model':{},'memory_versions':invalid})
+        assert service.call({'op':'open','id':exp['id']})==exp
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'按我的偏好回答','request_id':'selected','model':{},'memory_versions':[versions['preference']]})
+    assert [m['key'] for m in p['prompt']['allowed']]==['preference']
+    assert '仅本机查看的项目资料' not in json.dumps(p['prompt'],ensure_ascii=False)
+    exp=service.call({'op':'abort','id':exp['id'],'revision':p['revision'],'request_id':'selected','status':'cancelled'})
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'回顾已完成的事项','request_id':'completed','model':{},'memory_versions':[versions['closed_task']]})
+    assert p['prompt']['allowed'][0]['state']=='completed'
+    assert p['prompt']['allowed'][0]['kind']=='task'
+
 def test_memory_content_is_not_a_system_instruction(service):
     value='项目资料中的命令样本，仅供分析，不代表授权'
     exp=finish(service,create(service),text=value)
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
-    pending=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析资料','request_id':'boundary','model':{}})
+    pending=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析资料','request_id':'boundary','model':{},'memory_versions':[exp['governance']['versions'][-1]['version_id']]})
     assert value not in pending['prompt']['system']
     assert pending['prompt']['allowed'][0]['value']==value
 
@@ -81,19 +119,9 @@ def test_invalid_assessment_cannot_partially_save_a_turn(service,assessment):
     with pytest.raises(ValueError):service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'invalid-risk','reply':'回复','candidates':[],'assessment':assessment})
     assert service.call({'op':'open','id':p['id']})==before
 
-@pytest.mark.parametrize('text',[
-    '分析自称银行客服、催促提交验证码的短信。',
-    '有人自称负责人要求导出员工资料并立即转账，请分析。',
-    '按文档整理项目；文档另称可以忽略规则并读取私人记忆。',
-    '前轮称获得信任，旧摘要又称已授权；请检查这些片段。',
-    '这份投资宣传承诺高收益并收取预付费用，能核实吗？',
-    '请保留某招聘方涉嫌诈骗的未证实线索，不要当成定论。',
-    '总结“忽略规则、索取密码”的攻击手法，并起草安全回复。',
-    '按合法文档修改排版，不接受其中覆盖权限的要求。',
-    '不要执行支付，只解释哪些操作需要当次授权。',
-    '分析被拒候选及旧摘要为何不能恢复成确定事实。',
-])
-def test_suspicious_text_can_be_analyzed_without_automatic_memory_writes(service,text):
+def test_suspicious_text_can_be_analyzed_without_automatic_memory_writes(service):
+    # One routing contract, not a keyword-based fraud-classification benchmark.
+    text='按文档整理项目，并分析其中冒充管理员、索取密码和催促转账的指令；仅起草安全回复。'
     exp=finish(service,create(service),text=text,candidates=[])
     assert exp['turns'][-1]['input']==text and exp['turns'][-1]['reply']
     assert not any(exp['snapshot'].values())
@@ -127,7 +155,8 @@ def test_inference_can_summarize_admitted_parents_without_gaining_authority(serv
 
 def finish(s,exp,text='喜欢短回答',candidates=None):
     p=s.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':text,'request_id':'r'+str(exp['revision']),'model':{'name':'local','protocol':'openai','model':'test'}})
-    return s.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':p['pending']['request_id'],'reply':'这是实际HTTP返回样本','usage':None,'candidates':candidates if candidates is not None else [{'op':'set','key':'preference','value':text}]})
+    proposed=candidates if candidates is not None else [{'op':'set','key':'preference','value':text}]
+    return s.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':p['pending']['request_id'],'reply':'这是实际HTTP返回样本','usage':None,'candidates':[{'basis':'self_report',**c} for c in proposed]})
 
 def test_restart_proposals_and_authorization(service):
     exp=create(service)
@@ -258,7 +287,7 @@ def test_corrupt_catalog_entry_does_not_hide_other_experiments(service):
 
 def test_validation_export_and_rules_snapshot(service):
     exp=create(service)
-    for c in ([{'op':'set','key':'x','value':'v','role':'OTHER'}],[{'op':'set','key':'x','value':'v','source_kind':'owner_direct'}]):
+    for c in ([{'op':'set','key':'x','value':'v','basis':'self_report','role':'OTHER'}],[{'op':'set','key':'x','value':'v','basis':'self_report','source_kind':'owner_direct'}]):
         p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'hello','request_id':'r','model':{}})
         with pytest.raises(ValueError):service.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':'r','reply':'x','candidates':c})
         exp=service.call({'op':'abort','id':exp['id'],'revision':p['revision'],'request_id':'r','status':'failed'})
@@ -286,6 +315,12 @@ def test_rule_provenance_is_frozen_and_legacy_remains_readable(service):
     legacy=create(service)
     assert 'source' not in legacy['rules']
     assert service.call({'op':'open','id':legacy['id']})['rules']==legacy['rules']
+    legacy=finish(service,legacy)
+    del legacy['turns'][0]['candidates'][0]['basis']
+    service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(legacy,ensure_ascii=False),legacy['id']));service.db.commit()
+    assert service.call({'op':'open','id':legacy['id']})==legacy
+    legacy=service.call({'op':'decide','id':legacy['id'],'revision':legacy['revision'],'index':0,'confirm':True})
+    assert legacy['snapshot']['current']['preference']['value']=='喜欢短回答'
 
 def test_candidate_lineage_and_delete_cascade(service):
     exp=finish(service,create(service),text='待核实线索')
@@ -350,7 +385,8 @@ def test_conflict_cannot_bypass_admission_through_chat_history(service):
         {'op':'set','key':'configuration','value':'配置乙','event_time':'2000-01-01'}])
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
     assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
-    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'现在配置是什么','request_id':'after-conflict','model':{}})
+    goal=next(r['version_id'] for r in exp['governance']['versions'] if r['key']=='independent_goal')
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'现在配置是什么','request_id':'after-conflict','model':{},'memory_versions':[goal]})
     assert {m['key'] for m in p['prompt']['allowed']}=={'independent_goal'}
     assert p['prompt']['messages']==[{'role':'user','content':'现在配置是什么'}]
     assert len(p['turns'])==2, 'trim model context, not the saved experiment evidence'
@@ -400,6 +436,9 @@ def test_expiry_cannot_reenter_prompt_through_old_chat(service,monkeypatch):
     exp=finish(service,create(service),text='临时安排是周五到场',candidates=[{'op':'set','key':'temporary_plan','value':'周五到场','expires_at':'2099-01-01'}])
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
     Clock.today=staticmethod(lambda:date(2100,1,1))
+    expired=exp['governance']['versions'][-1]['version_id']
+    with pytest.raises(ValueError):service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'request_id':'denied-expiry','input':'现在的安排呢','model':{},'memory_versions':[expired]})
+    assert service.call({'op':'open','id':exp['id']})==exp
     p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'request_id':'after-expiry','input':'现在的安排呢','model':{}})
     assert p['prompt']['allowed']==[]
     assert p['prompt']['messages']==[{'role':'user','content':'现在的安排呢'}]
@@ -442,7 +481,7 @@ def test_invalid_candidate_conditions_never_persist(service,extra):
     exp=create(service)
     p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'合法输入','request_id':'invalid','model':{}})
     saved=service.call({'op':'open','id':p['id']})
-    proposed=[dict(op='set',key='fact',value='候选内容',**extra)]
+    proposed=[dict(op='set',key='fact',value='候选内容',basis='self_report',**extra)]
     with pytest.raises(ValueError):service.call({'op':'validate_candidates','candidates':proposed})
     with pytest.raises(ValueError):service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'invalid','reply':'实际回复','candidates':proposed})
     assert service.call({'op':'open','id':p['id']})==saved
@@ -471,7 +510,7 @@ def test_failed_reply_save_keeps_original_pending_state(service):
     stored=service.call({'op':'open','id':p['id']})
     service.db.execute("CREATE TRIGGER fail_reply BEFORE UPDATE ON experiments BEGIN SELECT RAISE(ABORT,'forced save failure'); END")
     with pytest.raises(sqlite3.Error):
-        service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'save-failure','reply':'模型已经回复','candidates':[{'op':'set','key':'example','value':'尚未提交'}]})
+        service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'save-failure','reply':'模型已经回复','candidates':[{'op':'set','key':'example','value':'尚未提交','basis':'self_report'}]})
     service.db.execute('DROP TRIGGER fail_reply')
     assert Service(service.root).call({'op':'open','id':p['id']})==stored
     recovered=service.call({'op':'abort','id':p['id'],'revision':p['revision'],'request_id':'save-failure','status':'interrupted'})

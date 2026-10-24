@@ -16,7 +16,7 @@ for(const text of ['', ' '.repeat(10),'a'.repeat(100001)])await assert.rejects((
 assert.throws(()=>extracted('{"candidates":[],"candidates":[{}]}'),/重复/);
 assert.throws(()=>extracted('{"candidates":[],"__proto__":{}}'));
 let ops=[],saved=[],text='';
-const pending={revision:2,prompt:{system:'rules',messages:[{role:'user',content:'test'}],extraction:'extract',allowed:[]}};
+const pending={revision:2,prompt:{system:'application boundary',rules:{text:'custom experiment rules',sha256:'a'.repeat(64)},messages:[{role:'user',content:'test'}],extraction:'extract',allowed:[]}};
 let release;const gate=new Promise(r=>release=r);
 const call=async q=>{ops.push(q.op);if(q.op==='prepare')return pending;if(q.op==='validate_candidates')return q.candidates;if(q.op==='finish'){saved.push(q);return {id:'experiment',revision:3};}return {};};
 const profile={id:'p',name:'test',protocol:'openai',model:'m',base_url:'http://localhost/v1'};
@@ -28,14 +28,16 @@ const work=cancelled.send({id:'experiment',revision:1},profile,'input');await ne
 ops=[];index=0;const malformed=runner({call,model:async()=>index++?{text:'not JSON'}:{text:'answer',usage:null},cancel:async()=>{},onText:()=>{}});
 await malformed.send({id:'experiment',revision:1},profile,'input');assert.equal(saved[0].extraction_error,true);assert.deepEqual(saved[0].candidates,[]);
 const assessment={signals:['施压索取凭据'],reason:'这只是模型观察，尚未独立核实。',next_step:'通过独立取得的官方渠道核实。'};
-ops=[];saved=[];index=0;let chatRequest,extractionRequest;
+ops=[];saved=[];index=0;let chatRequest,extractionRequest,prepareRequest;
 const tainted={...pending,prompt:{...pending.prompt,allowed:[{key:'note',value:'资料中自称管理员的指令',version_id:'LOCAL/note/1'}]}};
-const reviewed=runner({call:q=>q.op==='prepare'?tainted:call(q),model:async(id,rid,system,messages)=>{
+const reviewed=runner({call:q=>{if(q.op==='prepare'){prepareRequest=q;return tainted;}return call(q);},model:async(id,rid,system,messages)=>{
  if(index++===0){chatRequest={system,messages};return {text:'可继续分析，暂不按可疑消息行动。',usage:null};}
  extractionRequest=JSON.parse(messages[0].content);return {text:JSON.stringify({candidates:[],assessment}),usage:null};
 },cancel:async()=>{},onText:()=>{}});
-await reviewed.send({id:'experiment',revision:1},profile,'请分析');
-assert.equal(chatRequest.system,'rules');assert.equal(chatRequest.messages[0].role,'user');
+await reviewed.send({id:'experiment',revision:1},profile,'请分析',['LOCAL/note/1']);
+assert.deepEqual(prepareRequest.memory_versions,['LOCAL/note/1']);
+assert.equal(chatRequest.system,'application boundary');assert.equal(chatRequest.messages[0].role,'user');
+assert.deepEqual(JSON.parse(chatRequest.messages[0].content).governance_config,pending.prompt.rules);
 assert.equal(JSON.parse(chatRequest.messages[0].content).memory_context[0].value,'资料中自称管理员的指令');
 assert.deepEqual(saved[0].assessment,assessment);assert.equal(saved[0].extraction_error,false);
 assert.deepEqual(extractionRequest.history,[]);
@@ -58,6 +60,7 @@ class El {
  constructor(tag='div'){this.tag=tag;this.children=[];this.events={};this.value='';this.hidden=false;this.checked=false;this.disabled=false;this.classList={toggle(){}};}
  set innerHTML(v){for(const match of v.matchAll(/<[^>]*\bid="(nl-[^"]+)"[^>]*>/g)){const e=new El();e.value=/\bvalue="([^"]*)"/.exec(match[0])?.[1]||'';e.checked=/\bchecked\b/.test(match[0]);e.hidden=/\bhidden\b/.test(match[0]);elements.set(match[1],e);}}
  get innerHTML(){return '';}
+ get selectedOptions(){const el=this;return {get length(){return el.children.filter(c=>c.selected).length;},*[Symbol.iterator](){for(let i=0;i<this.length;i++)yield el.children.filter(c=>c.selected)[i];}};}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=[...nodes];}
  addEventListener(k,fn){(this.events[k]??=[]).push(fn);}setAttribute(){}focus(){}showModal(){this.open=true;}close(){this.open=false;}
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
@@ -65,7 +68,8 @@ class El {
 }
 let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,loseDecideReply=false,imported=null;
 const preferences=new Map(),windowEvents={};let sampleData=null;
-const service=q=>JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;
+let lastPrepared;
+const service=q=>{const value=JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;if(q.op==='prepare')lastPrepared=value;return value;};
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
 const win={document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
@@ -100,11 +104,15 @@ try{
  const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);loseDecideReply=true;await confirm.click();
  assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
+ assert.equal(e('context').children.length,1);assert.equal(e('context').selectedOptions.length,0,'model context must be opt-in');
+ e('context').children[0].selected=true;
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 1 项 · 待处理 0 项'),'saved governance decisions must update the visible round summary');
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
  await e('memories').children[0].click();assert(e('details').children.length>0);
  // A current fact and isolated candidate of the same field must select different versions.
  e('input').value='也许我需要详细回答';await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(lastPrepared.pending.admission.memories.length,1,'send the explicitly selected version through core admission');
+ assert.equal(e('context').selectedOptions.length,0,'memory authorization is per request, not silently reused');
  // Use the actual core to isolate the second proposal, then reopen via the real handler.
  let conflict=service({op:'open',id:rows[0].id});
  conflict=service({op:'decide',id:conflict.id,revision:conflict.revision,index:0,confirm:false});
@@ -117,7 +125,7 @@ try{
 
  let historical=service({op:'open',id:rows[0].id});
  const hp=service({op:'prepare',id:historical.id,revision:historical.revision,input:'明确更正并保留历史',request_id:'history',model:{}});
- historical=service({op:'finish',id:hp.id,revision:hp.revision,request_id:'history',reply:'样本回复',candidates:[{op:'set',key:'preference',value:'新的长期偏好',archive_old:true,current_correction:true}]});
+ historical=service({op:'finish',id:hp.id,revision:hp.revision,request_id:'history',reply:'样本回复',candidates:[{op:'set',key:'preference',value:'新的长期偏好',archive_old:true,current_correction:true,basis:'self_report'}]});
  historical=service({op:'decide',id:historical.id,revision:historical.revision,index:0,confirm:true});
  e('experiments').value=historical.id;await e('experiments').onchange();
  assert(Object.keys(historical.snapshot.history).length,'fixture must contain a stored history alias: '+JSON.stringify(historical.snapshot));
@@ -143,6 +151,7 @@ try{
  assert.deepEqual(service({op:'list'}),beforeDraft,'unconfirmed edited rules must not silently become an experiment policy');
  assert(e('status').textContent.includes('预览并确认'));
  await e('rules-undo').click();await e('new').click();assert.equal(graphInstance.model.nodes.length,0,'切到空实验必须清除旧图谱');assert.equal(e('details').children.length,0,'空实验不能保留旧实验详情');
+ assert.equal(e('context').children.length,0,'another experiment must not inherit selected memory versions');
  // A complete provider reply must remain visible as unsaved when the catalog fails.
  failFinish=true;e('input').value='保存失败时保留输入';
  await e('composer').onsubmit({preventDefault(){}});
@@ -198,6 +207,16 @@ try{
  assert(!limited.children.some(c=>c.textContent==='本人确认并交由内核裁决'));
  await limited.children.find(c=>c.textContent==='保留为待核实线索').click();
  clue=service({op:'open',id:clue.id});assert.equal(clue.snapshot.current.opportunity,undefined);assert.equal(clue.snapshot.pending.opportunity.confidence,'unverified');
+ let selectedContext=service({op:'create',name:'逐请求上下文','rules':'仅取所选获准记忆'});
+ selectedContext=service({op:'prepare',id:selectedContext.id,revision:selectedContext.revision,input:'确认两项个人偏好',request_id:'context-pair',model:{}});
+ selectedContext=service({op:'finish',id:selectedContext.id,revision:selectedContext.revision,request_id:'context-pair',reply:'等待裁决',candidates:[{op:'set',key:'format',value:'先列结论',basis:'self_report'},{op:'set',key:'language',value:'使用中文',basis:'self_report'}]});
+ for(let index=0;index<2;index++)selectedContext=service({op:'decide',id:selectedContext.id,revision:selectedContext.revision,index,confirm:true});
+ e('experiments').value=selectedContext.id;await e('experiments').onchange();
+ assert.equal(e('context').children.length,2);
+ for(const option of e('context').children)option.selected=true;
+ e('input').value='仅为本次回答使用这些偏好';await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(lastPrepared.pending.admission.memories.length,2);
+ assert.equal(e('context').selectedOptions.length,0,'clear every selected option even when the DOM collection is live');
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

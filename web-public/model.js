@@ -2,7 +2,7 @@
   'use strict';
   const partitions=['current','completed','history','pending'];
   const states={current:{name:'当前有效',color:0x1b6c80},history:{name:'历史',color:0x737d89},pending:{name:'待核实',color:0xa86f0c},retired:{name:'已退出标记',color:0x737d89},task:{name:'进行中任务',color:0x2f70bb},completed:{name:'已完成',color:0x1b6c80}};
-  const fields={project:'图册项目',preference:'回答偏好',catalogue:'图册目录',license_check:'图片许可核对',external_claim:'外部线索',summary:'线索摘要',summary_again:'二次摘要',future_goal:'未来目标',constraint:'关键约束',name:'姓名',city:'城市',occupation:'职业',family:'家庭',residence:'居住区域',commute:'通勤',health:'健康反馈',health_habit:'生活建议',spouse_job:'配偶职业',daughter_school:'子女学校',study:'学习目标',pmp:'PMP证书',intro_age:'初次自述年龄',layoff_rumor:'裁员传闻',opportunity:'招聘线索',opportunity_followup:'本人跟进任务',gym:'游泳安排',car_care:'车辆保养',med_pickup:'原取药安排',art_class:'美术班安排'};
+  const fields={personal_contact:'联系方式（本地）',personal_address:'住址（本地）',personal_health:'健康自述（本地）',personal_family:'家庭信息（本地）',project:'图册项目',preference:'回答偏好',catalogue:'图册目录',license_check:'图片许可核对',external_claim:'外部线索',summary:'线索摘要',summary_again:'二次摘要',future_goal:'未来目标',constraint:'关键约束',name:'姓名',city:'城市',occupation:'职业',family:'家庭',residence:'居住区域',commute:'通勤',health:'健康反馈',health_habit:'生活建议',spouse_job:'配偶职业',daughter_school:'子女学校',study:'学习目标',pmp:'PMP证书',intro_age:'初次自述年龄',layoff_rumor:'裁员传闻',opportunity:'招聘线索',opportunity_followup:'本人跟进任务',gym:'游泳安排',car_care:'车辆保养',med_pickup:'原取药安排',art_class:'美术班安排'};
   const protectedFields=new Set(["access_token", "account_password", "api_key", "api_token", "auth_token", "bank_account", "bank_account_number", "bank_card", "bank_card_number", "bearer_token", "cellphone", "client_secret", "contact_details", "contact_info", "contact_number", "id_card", "id_card_number", "id_number", "identity_card", "identity_card_number", "identity_number", "mobile", "mobile_number", "mobile_phone", "otp", "passcode", "password", "phone", "phone_number", "private_key", "pwd", "rules", "secret_key", "session_cookie", "system_prompt", "telephone", "token", "user_md", "verification_code", "口令", "密码", "密钥", "手机号", "手机号码", "电话", "电话号码", "短信验证码", "私钥", "联系方式", "联系电话", "访问令牌", "身份证", "身份证号", "身份证号码", "银行卡", "银行卡号", "银行卡号码", "银行账号", "银行账户", "验证码"]);
   function isProtectedKey(value){
     const key=String(value).replace(/__previous$/,'').split('__').at(-1).normalize('NFKC')
@@ -17,6 +17,37 @@
     if(value&&typeof value==='object')return Object.entries(value).some(([key,item])=>isProtectedKey(key)||isSensitive(item));
     const text=String(value).normalize('NFKC');
     return credentialPattern.test(text)||sensitiveNumberPattern.test(text.replace(publicIdPattern,''));
+  }
+  function personalKind(value){
+    const text=String(value).normalize('NFKC');
+    if(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/.test(text))return 'contact';
+    if(isSensitive(text)&&/\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|(?:手机号?|联系|电话|phone|mobile|telephone)[^\n]{0,20}\d/i.test(text))return 'contact';
+    for(const [category,pattern]of [
+      ['address',/(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|home address|I live at)\s*[:：是为]?\s*\S+/i],
+      ['health',/(?:我(?:的诊断|患有|确诊|有过敏|的病史|的健康)|my (?:diagnosis|medical history)|I (?:have been diagnosed|suffer from))/i],
+      ['family',/(?:我的?(?:家属|配偶|孩子|子女|父亲|母亲)|my (?:spouse|child|daughter|son|parent))/i]])if(pattern.test(text))return category;
+    return null;
+  }
+  function forbiddenPersonal(value){
+    const original=String(value).normalize('NFKC');if(credentialPattern.test(original))return true;
+    const text=original.replace(publicIdPattern,'').replace(/(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)/g,'');
+    return /(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}/.test(text);
+  }
+  function personalDraft(clock=()=>Date.now()){
+    let pending=null;
+    const clear=()=>{pending=null;};
+    return {clear,get pending(){if(pending&&clock()>=pending.expires)clear();return !!pending;},review(plan,explicit){
+      clear();assert(explicit===true,'仅在明确要求长期保存时确认');
+      assert(object(plan)&&Object.keys(plan).length===4&&['contact','address','health','family'].includes(plan.category)&&typeof plan.value==='string'&&plan.value.trim()&&plan.value.length<=500&&typeof plan.purpose==='string'&&plan.purpose.trim().length>=2&&plan.purpose.length<=120&&typeof plan.scope==='string'&&plan.scope,'保存方案不完整');
+      assert(!forbiddenPersonal(plan.value)&&!isSensitive(plan.purpose),'高敏禁存或用途含敏感内容');
+      assert(plan.category!=='contact'||personalKind('phone:'+plan.value)==='contact','联系方式格式无法安全确认');
+      const id=root.crypto.randomUUID().replaceAll('-','');pending={id,plan:{...plan},expires:clock()+120000};
+      return {id,category:plan.category,purpose:plan.purpose,scope:plan.scope,masked:'已输入 '+Array.from(plan.value).length+' 个字符（原值不展示）',expires:pending.expires};
+    },take(id){assert(this.pending&&pending.id===id,'确认已失效，请重新提供');const value={...pending.plan};clear();return value;}};
+  }
+  function personalPayload(p){
+    const r=p?.retention;
+    return p?.data_type==='personal_information'&&p.privacy==='restricted'&&typeof p.value==='string'&&!forbiddenPersonal(p.value)&&object(r)&&Object.keys(r).sort().join(',')==='category,purpose,request_id,scope,use'&&['contact','address','health','family'].includes(r.category)&&typeof r.purpose==='string'&&r.purpose.length>=2&&r.purpose.length<=120&&!isSensitive(r.purpose)&&typeof r.scope==='string'&&/^[A-Za-z0-9_./-]{1,96}$/.test(r.scope)&&/^[a-f0-9]{32}$/.test(r.request_id)&&r.use==='local_only';
   }
   const sourceNames={owner:'主人自述',stranger:'未核验第三方',push:'外部推送',system:'外部系统内容'};
   function label(k){
@@ -34,17 +65,18 @@
   function object(v){return !!v&&typeof v==='object'&&!Array.isArray(v);}
   function canonical(v){if(v===undefined)return 'undefined';return JSON.stringify(v&&typeof v==='object'?(Array.isArray(v)?v.map(x=>JSON.parse(canonical(x))):Object.fromEntries(Object.keys(v).sort().map(k=>[k,JSON.parse(canonical(v[k]))]))):v);}
   function assert(ok,msg){if(!ok)throw new Error(msg);}
-  function guardTree(value,depth=0,count={n:0},path=[]){
+  function guardTree(value,depth=0,count={n:0},path=[],personal=false){
+    if(personal&&personalPayload(value))value={...value,value:'[本地私人记忆]'};
     assert(depth<=16&&++count.n<=120000,'数据层级或节点数超限');
     if(typeof value==='string'){
       assert(value.length<=16000,'单项文本过长');
       assert((['data.policy.sha256','policy.sha256'].includes(path.join('.'))&&/^[a-f0-9]{64}$/.test(value))||!isSensitive(value),'文本中疑似敏感长号码，拒绝导入');
     }
     else if(value&&typeof value==='object')for(const [k,v] of Object.entries(value)){
-      assert(!['__proto__','prototype','constructor'].includes(k)&&!isProtectedKey(k),'数据含不安全属性');guardTree(v,depth+1,count,[...path,k]);
+      assert(!['__proto__','prototype','constructor'].includes(k)&&!isProtectedKey(k),'数据含不安全属性');guardTree(v,depth+1,count,[...path,k],personal);
     }
   }
-  function snapshot(s){
+  function snapshot(s,personal=false){
     assert(object(s)&&Object.keys(s).every(k=>partitions.includes(k))&&partitions.every(k=>object(s[k])),'缺失或不支持的记忆分区，不推造状态');
     let total=0;
     for(const part of partitions)for(const [key,p] of Object.entries(s[part])){
@@ -54,7 +86,7 @@
       assert(['private','restricted'].includes(p.privacy)&&['self_reported','unverified'].includes(p.confidence),'隐私或可信度标记不受支持');
       assert(!(p.confidence==='unverified'&&part!=='pending'),'未核实事实不得位于可信分区');
       assert(!isProtectedKey(key)&&p.privacy!=='high','拒绝导入高敏或治理字段');
-      assert(!isSensitive(p),'疑似敏感长号码，拒绝导入');
+      assert(personal&&personalPayload(p)||!isSensitive(p),'疑似敏感长号码，拒绝导入');
       if(Object.hasOwn(p,'kind'))assert(['fact','task','reminder'].includes(p.kind),'不支持的事实类型');
       if(Object.hasOwn(p,'ttl'))assert(typeof p.ttl==='string'&&!!p.ttl.trim(),'时效说明无效');
       for(const field of ['event_time','expires_at','due_at','time_floor'])if(Object.hasOwn(p,field)){
@@ -65,7 +97,7 @@
       else assert(!Object.hasOwn(p,'task_status')&&!Object.hasOwn(p,'due_at'),'非任务不能包含任务状态或截止日');
     }
   }
-  function governance(g,role,after){
+  function governance(g,role,after,personal=false){
     assert(object(g)&&g.format==='memory-lab.governance.v1'&&g.policy==='V3.3'&&Array.isArray(g.versions)&&g.versions.length<=1000&&Array.isArray(g.audit),'治理证据格式不受支持');
     const map=new Map(),authority={owner_direct:'direct',external:'external',summary:'external',tool_echo:'external',inference:'external',legacy:'unknown',unknown:'unknown'};
     for(const r of g.versions){
@@ -76,7 +108,7 @@
       assert(canonical([...r.roots].sort())===canonical(r.source.map(x=>x.source_id).sort())&&r.source.every(x=>object(x)&&x.role===role&&Object.hasOwn(authority,x.source_kind)&&authority[x.source_kind]===x.authority_class),'根来源与权威不一致');
       assert(r.authority_class!=='direct'||r.source.every(x=>x.authority_class==='direct'),'派生或来源权威被升级');
       assert(typeof r.created_at==='string'&&Number.isFinite(Date.parse(r.created_at)),'缺少实际接收时间');
-      if(r.payload!==null){const one={current:{},completed:{},history:{},pending:{}};one[r.part][r.key]=r.payload;snapshot(one);assert(r.payload.version===r.revision&&r.payload.privacy===r.privacy,'治理载荷不一致');}
+      if(r.payload!==null){const one={current:{},completed:{},history:{},pending:{}};one[r.part][r.key]=r.payload;snapshot(one,personal);assert(r.payload.version===r.revision&&r.payload.privacy===r.privacy,'治理载荷不一致');}
       else assert(['forgotten','invalidated'].includes(r.lifecycle),'无值版本不得伪装有效');
       assert(r.lifecycle!=='forgotten'||r.payload===null,'遗忘证据不能保留原值');map.set(r.version_id,r);
     }
@@ -97,8 +129,8 @@
       assert(a.version_id===null||(map.has(a.version_id)&&map.get(a.version_id).memory_id===a.memory_id),'审计版本引用无效');
     }
   }
-  function adapt(raw){
-    guardTree(raw);assert(object(raw),'需要回放对象，不能导入任意日志');
+  function adapt(raw,{personal=false}={}){
+    guardTree(raw,0,{n:0},[],personal);assert(object(raw),'需要回放对象，不能导入任意日志');
     if(raw.mode==='REAL')throw new Error('REAL需可信核验与平台快照适配，当前未支持；不会根据自称认证');
     const envelope=raw.format==='memory-lab.replay.v1';
     if(raw.format)assert(envelope&&raw.mode==='SIMULATED','不支持的数据格式或来源模式');
@@ -111,7 +143,7 @@
     for(const [i,f] of data.frames.entries()){
       assert(object(f)&&f.round===i+1&&typeof f.input==='string'&&typeof f.annotation==='string','轮次不连续或缺少输入/说明');
       assert(Object.hasOwn(sourceNames,f.source)&&['PASS','FAIL'].includes(f.status),'不支持的来源或验收状态');
-      snapshot(f.before);snapshot(f.after);
+      snapshot(f.before,personal);snapshot(f.after,personal);
       assert(Array.isArray(f.decisions)&&f.decisions.length<=100&&f.decisions.every(d=>object(d)&&['ADD','UPDATE','RETIRE','DELETE','REJECT','TEMPORARY','NO_CHANGE'].includes(d.action)&&typeof d.reason==='string'),'决策无效');
       assert(object(f.diff)&&['added','changed','removed'].every(k=>Array.isArray(f.diff[k])&&f.diff[k].every(v=>typeof v==='string'&&/^(current|completed|history|pending)\.[\w-]{1,96}$/.test(v))),'缺少有效状态差异');
     }
@@ -141,11 +173,11 @@
       }
     }
     assert(object(data.summary)&&['PASS','FAIL'].every(k=>data.summary[k]===data.frames.filter(f=>f.status===k).length),'统计与实际轮次不一致');
-    if(data.final){snapshot(data.final);assert(canonical(data.final)===canonical(data.frames.at(-1).after),'最终状态与末轮不一致');}
+    if(data.final){snapshot(data.final,personal);assert(canonical(data.final)===canonical(data.frames.at(-1).after),'最终状态与末轮不一致');}
     const role=envelope?raw.role:'LIMING';
     assert(typeof role==='string'&&/^[A-Z0-9_-]{1,48}$/.test(role),'角色标识无效');
     for(const f of data.frames){
-      if(f.governance!==undefined&&f.governance!==null)governance(f.governance,role,f.after);
+      if(f.governance!==undefined&&f.governance!==null)governance(f.governance,role,f.after,personal);
       if(f.admission!==undefined){
         const a=f.admission,records=new Map((f.governance?.versions||[]).map(r=>[r.version_id,r]));
         assert(object(a)&&Array.isArray(a.allowed_ids)&&a.allowed_ids.length<=1000&&Array.isArray(a.denied)&&a.denied.length<=1000,'检索准入记录格式无效');
@@ -279,6 +311,6 @@
       {index:f.length-1,title:'最终状态与可用依据',view:'overview'}];
     const seen=new Set(),unique=stops.filter(s=>s.index>=0&&!seen.has(s.index)&&seen.add(s.index));const dwell=Math.floor(30000/unique.length)/1000;let used=0;return unique.map((s,i)=>{const seconds=i===unique.length-1?30-used:dwell;used+=seconds;return {...s,seconds};});
   }
-  const api={partitions,states,sourceNames,label,category,isProtectedKey,isSensitive,adapt,parse,parseJSON,encode,graph,roundView,events,position,controller,tour};
+  const api={partitions,states,sourceNames,label,category,isProtectedKey,isSensitive,personalKind,forbiddenPersonal,personalDraft,personalPayload,adapt,parse,parseJSON,encode,graph,roundView,events,position,controller,tour};
   if(typeof module!=='undefined')module.exports=api;else root.MemoryModel=api;
 })(typeof window!=='undefined'?window:globalThis);

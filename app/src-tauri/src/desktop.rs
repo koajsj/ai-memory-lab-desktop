@@ -220,6 +220,11 @@ pub async fn experiment_call(
         request["op"].as_str(),
         Some(
             "validate_candidates"
+                | "privacy_review"
+                | "privacy_commit"
+                | "privacy_cancel"
+                | "privacy_delete"
+                | "temporary"
                 | "list"
                 | "create"
                 | "open"
@@ -236,7 +241,7 @@ pub async fn experiment_call(
     ) {
         return Err("操作未授权".into());
     }
-    if request["op"] == "prepare" {
+    if request["op"] == "prepare" || request["op"] == "temporary" {
         let id = profile_id.ok_or("发送前请选择模型配置")?;
         identifier(&id)?;
         let _gate = state.profiles.lock().await;

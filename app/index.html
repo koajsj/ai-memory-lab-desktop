@@ -64,6 +64,11 @@
       <label class="check"><input id="lab-confirmed" type="checkbox">本人提供新依据并确认重建</label>
     </div></details>
   </form>
+  <details><summary>私人信息 · 本地确认演练</summary><form id="lab-personal-form" class="experiment-form">
+    <label>类别<select id="lab-personal-category"><option value="contact">联系方式</option><option value="address">家庭住址</option><option value="health">健康自述</option><option value="family">家庭信息</option></select></label>
+    <label class="lab-content">本人提供的最少信息<textarea id="lab-personal-value" maxlength="500" rows="2" autocomplete="off"></textarea></label>
+    <label>必要保存用途<input id="lab-personal-purpose" maxlength="120" autocomplete="off"></label><button type="submit">查看保存方案</button>
+  </form><div id="lab-personal-preview" hidden></div><small>SIMULATED · 确认后也只驻留本页内存；关闭、换话题或两分钟未确认即清空。主动导出可能包含已确认的信息。</small></details>
   <div id="lab-result" class="lab-result" role="status">从一条偏好开始，观察更正、冲突或删除。角色由本地演练配置提供。</div>
   <details class="lab-export"><summary>导出实验选择</summary><label class="check"><input id="lab-export-history" type="checkbox">同时包含当前角色的其他分区、版本与审计元数据</label><p>默认只导出当前角色的当前分区、策略与日期；不包含其他角色。</p><button id="lab-export">下载所选实验结果</button></details>
 </section>

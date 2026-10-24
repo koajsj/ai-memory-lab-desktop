@@ -249,8 +249,8 @@ const details=[new Element(),new Element()];let frame,graph;
 const keyboardHandlers={},windowHandlers={};
 const document={getElementById:k=>elements[k],createElement:()=>new Element(),querySelectorAll:q=>q==='.audit-section'?details:[],addEventListener(k,f){keyboardHandlers[k]=f;},removeEventListener(){},hidden:false};
 class RecordGraph{constructor(host,opts){graph=this;this.onSelect=opts.onSelect;this.items=new Map();this.scene={traverse(){}};}configure(){}setCatalog(){this.items.clear();}request(){}select(id){this.selected=id;}focus(){}reset(){}setPaused(){}drawInitial(){}dispose(){}setData(g){this.items=new Map(g.nodes.map(n=>[n.id,n]));}}
-const ui={document,MemoryModel:M,MemoryState:require('./state.js'),MemoryGraph:{...loaded,GraphView:RecordGraph},REPLAY_DATA:raw,matchMedia:()=>({matches:false}),addEventListener(k,f){windowHandlers[k]=f;},performance,TextEncoder,TextDecoder,crypto:webcrypto,setTimeout,URL,Blob};
-const sandbox={window:ui,performance,TextEncoder,TextDecoder,Blob,URL,setTimeout,requestAnimationFrame:f=>{frame=f;return 1;},cancelAnimationFrame(){}};
+const ui={document,MemoryModel:M,MemoryState:require('./state.js'),MemoryGraph:{...loaded,GraphView:RecordGraph},REPLAY_DATA:raw,matchMedia:()=>({matches:false}),addEventListener(k,f){windowHandlers[k]=f;},performance,TextEncoder,TextDecoder,crypto:webcrypto,setTimeout,clearTimeout,URL,Blob};
+const sandbox={window:ui,performance,TextEncoder,TextDecoder,Blob,URL,setTimeout,clearTimeout,requestAnimationFrame:f=>{frame=f;return 1;},cancelAnimationFrame(){}};
 vm.runInNewContext(fs.readFileSync(runtime+'platform.js','utf8'),sandbox);
 vm.runInNewContext(fs.readFileSync(runtime+'app.js','utf8'),sandbox);assert(graph.items.size>0);
 const readText=n=>[n.textContent,...n.children.map(readText)].join(' ');
@@ -352,6 +352,17 @@ elements['lab-actor'].value='RESEARCHER_B';await elements['lab-actor'].fire('cha
 await elements['reset-experiment'].click();assert.equal(graph.items.size,0);assert.equal(elements.range.value,'1');
 await elements['leave-experiment'].click();assert.equal(elements['enter-experiment'].attrs['aria-pressed'],'false');assert.equal(elements['experiment-panel'].hidden,true);assert.equal(elements.range.value,'14');assert.equal(JSON.stringify(ui.MemoryWorkspace.dataset),originalDemo);assert.equal(ui.MemoryWorkspace.selected,demoSelection);
 await elements['enter-experiment'].click();assert.equal(graph.items.size,0);await elements['leave-experiment'].click();
+await elements['enter-experiment'].click();
+const personalValue='+1 (202) 555-0147';
+elements['lab-value'].value=personalValue;await elements['experiment-form'].fire('submit');
+assert.equal(elements['lab-value'].value,'');assert(!JSON.stringify(ui.MemoryWorkspace.dataset).includes(personalValue));assert.equal(elements['lab-personal-preview'].hidden,true);
+const personalReview=async()=>{elements['lab-personal-value'].value=personalValue;elements['lab-personal-purpose'].value='本地联系备忘';elements['lab-personal-category'].value='contact';await elements['lab-personal-form'].fire('submit');};
+await personalReview();assert.equal(elements['lab-personal-value'].value,'');assert(!JSON.stringify(ui.MemoryWorkspace.dataset).includes(personalValue));
+elements['lab-personal-preview'].children.find(n=>n.textContent==='不保存并清空').onclick();assert.equal(elements['lab-personal-preview'].hidden,true);
+await personalReview();elements['lab-personal-preview'].children.find(n=>n.textContent==='确认此方案').onclick();
+assert(JSON.stringify(ui.MemoryWorkspace.dataset).includes(personalValue));assert(elements['lab-result'].textContent.includes('模拟实验内存'));
+elements['lab-key'].value='personal_contact';elements['lab-value'].value='';elements['lab-action'].value='DELETE';await elements['experiment-form'].fire('submit');assert(!JSON.stringify(ui.MemoryWorkspace.dataset).includes(personalValue));
+await personalReview();await elements['leave-experiment'].click();assert.equal(elements['lab-personal-preview'].hidden,true);
 assert.deepEqual(storageWrites,[['memory-lab.intro-seen','1']],'只允许保存介绍已阅标记，不得持久化实验');
 // Tauri适配层必须真正调用原生导出，且保留取消／失败语义。
 const native=[];ui.__TAURI__={core:{invoke:async(command,args)=>{native.push({command,args});return true;}}};

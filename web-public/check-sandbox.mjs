@@ -46,4 +46,18 @@ test('导入准入不能将候选、外部来源或失效根派生标为允许',
  const b=make();go(b,{value:'确认值'});const external={format:'memory-lab.replay.v1',...b.dataset()},r=external.data.frames.at(-1).governance.versions[0];r.authority_class='external';r.source[0].source_kind='external';r.source[0].authority_class='external';assert.throws(()=>M.adapt(external),/准入/);
  go(b,{key:'summary',action:'DERIVE',value:'依赖摘要',parents:[last(b).governance.versions[0].version_id]});const lineage={format:'memory-lab.replay.v1',...b.dataset()};lineage.data.frames.at(-1).governance.versions[0].lifecycle='invalidated';assert.throws(()=>M.adapt(lineage),/准入/);
 });
+// Explicit local consent is separate from the ordinary action/confirmed flag.
+test('私人保存须独立确认，拒绝与删除不复活',()=>{
+ const personal=S.create(policy),draft=M.personalDraft();
+ const plan={category:'contact',value:'+86 138-0000-0000',purpose:'本地联系备忘',scope:'RESEARCHER_A/default'};
+ assert.throws(()=>personal.apply({action:'ADD',key:'personal_contact',value:plan.value,confirmed:true}));
+ const review=draft.review(plan,true);assert(!personal.exportSelected('RESEARCHER_A',{history:true}).includes(plan.value));
+ const result=personal.confirmPersonal(draft,review.id,'RESEARCHER_A','default');
+ assert.equal(result.dataset.data.final.current.default__personal_contact.value,plan.value);
+ assert.equal(personal.apply({action:'READ'}).result.allowed_ids.length,0);
+ assert.throws(()=>personal.confirmPersonal(draft,review.id,'RESEARCHER_A','default'));
+ personal.apply({action:'DELETE',key:'personal_contact'});
+ assert(!personal.exportSelected('RESEARCHER_A',{history:true}).includes(plan.value));
+ const refused=draft.review(plan,true);draft.clear();assert.throws(()=>personal.confirmPersonal(draft,refused.id,'RESEARCHER_A','default'));
+});
 console.log(`PASS：${checks}组浏览器模拟引擎状态回归，涵盖多轮更新、冲突、来源、项目／角色、时间、任务、派生、删除级联、重建、原子失败及受控导出；不是模型评测。`);

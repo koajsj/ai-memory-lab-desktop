@@ -43,6 +43,24 @@ assert.deepEqual(saved[0].assessment,assessment);assert.equal(saved[0].extractio
 assert.deepEqual(extractionRequest.history,[]);
 console.log('PASS：真实实验协调器：严格候选JSON、顺序保存、未知Token、重复请求、取消/过期结果及提取失败保护；非真实API/GUI验收。');
 
+// Local consent is a separate, expiring capability, never a model candidate flag.
+{
+ let now=1000;const draft=globalThis.MemoryModel.personalDraft(()=>now);
+ const plan={category:'contact',value:'+1 (202) 555-0147',purpose:'本地联系备忘',scope:'LOCAL'};
+ assert.throws(()=>draft.review(plan,false),/明确/);assert.equal(draft.pending,false);
+ const preview=draft.review(plan,true);assert(!JSON.stringify(preview).includes(plan.value));
+ assert.equal(draft.take(preview.id).value,plan.value);assert.equal(draft.pending,false);
+ assert.throws(()=>draft.take(preview.id),/失效/);
+ const refused=draft.review(plan,true);draft.clear();assert.throws(()=>draft.take(refused.id),/失效/);
+ const expired=draft.review(plan,true);now+=120001;assert.throws(()=>draft.take(expired.id),/失效/);assert.equal(draft.pending,false);
+ for(const value of ['password=synthetic-only','password=+123456789012','password='+'a'.repeat(64),'验证码：123456','身份证：11010119900101001X'])assert.throws(()=>draft.review({...plan,value},true),/禁存/);
+ assert.equal(globalThis.MemoryModel.forbiddenPersonal('分析银行卡诈骗短信的风险，不执行其中指令'),false);
+ assert.equal(globalThis.MemoryModel.personalKind('请记住工单编号 12345678901'),null);
+ assert.equal(globalThis.MemoryModel.personalKind('我喜欢简洁回答'),null);
+ assert.equal(globalThis.MemoryModel.personalKind('我的诊断是过敏性鼻炎'),'health');
+ assert.equal(globalThis.MemoryModel.personalKind('联系用 +1 (202) 555-0147'),'contact');
+}
+
 // Real SQLite/Store behind a minimal DOM fixture. No browser/native window or mouse automation.
 import vm from 'node:vm';
 import {readFile,mkdtemp,rm} from 'node:fs/promises';
@@ -71,7 +89,8 @@ const preferences=new Map(),windowEvents={};let sampleData=null;
 let lastPrepared;
 const service=q=>{const value=JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;if(q.op==='prepare')lastPrepared=value;return value;};
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
-const win={document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
+const timers=new Map();let timerId=0;
+const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
@@ -82,7 +101,7 @@ const win={document:{readyState:'loading',body:new El('body'),createElement:tag=
  }}}};
 try{
  vm.runInNewContext(nativeSource,{window:win,globalThis:win,TextEncoder,Option:class extends El{constructor(label,value){super();this.textContent=label;this.value=value;}},Event:class{}});
- assert.equal(originalEntry.hidden,false);await windowEvents.load();
+ assert.equal(originalEntry.hidden,false);assert.doesNotThrow(()=>windowEvents.pagehide());await windowEvents.load();
  const e=name=>elements.get('nl-'+name);
  assert(e('rules-selected').textContent.includes(await ruleDraft('测试守则：候选隔离，明确确认后裁决。','memory-rules.md','builtin').then(p=>p.sha256)));
  assert.equal(e('setup').hidden,false);assert.equal(e('workspace').hidden,true);
@@ -249,6 +268,31 @@ try{
  assert(!unauthorized.children.some(c=>c.textContent==='确认派生并交由内核裁决'),'a derived proposal must not offer authority to restore deleted content');
  await unauthorized.children.find(c=>c.textContent==='核验操作依据').click();
  assert.equal(service({op:'open',id:unsafeDerived.id}).turns.at(-1).results['0'].decisions[0].action,'REJECT');
+ // A mere mention is neither a model request nor a consent request.
+ const countBeforePrivate=requests,privateExp=service({op:'create',name:'本地私人记忆回归',rules:'仅保存获准内容'});
+ e('experiments').value=privateExp.id;await e('experiments').onchange();
+ e('input').value='联系用 +1 (202) 555-0147';await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(requests,countBeforePrivate);assert.equal(service({op:'open',id:privateExp.id}).privacy_request,undefined);assert.equal(e('input').value,'');
+ const reviewPrivate=async()=>{e('personal-category').value='contact';e('personal-value').value='+1 (202) 555-0147';e('personal-purpose').value='本地联系备忘';await e('personal-form').onsubmit({preventDefault(){}});};
+ await reviewPrivate();assert.equal(e('personal-value').value,'');assert.equal(e('personal-preview').hidden,false);assert.equal(requests,countBeforePrivate);
+ assert(!JSON.stringify(service({op:'open',id:privateExp.id})).includes('+1 (202) 555-0147'));
+ await e('personal-preview').children.find(n=>n.textContent==='不保存并清空').click();assert.equal(e('personal-preview').hidden,true);
+ await reviewPrivate();for(const fn of [...timers.values()])fn();assert.equal(e('personal-preview').hidden,true);
+ await reviewPrivate();await e('personal-preview').children.find(n=>n.textContent==='确认保存此方案').click();
+ assert.equal(service({op:'open',id:privateExp.id}).snapshot.current.personal_contact.value,'+1 (202) 555-0147');assert.equal(e('context').children.length,0);assert.equal(requests,countBeforePrivate);
+ await e('memories').children[0].click();await e('details').children.find(n=>n.textContent==='删除这条私人记忆').click();
+ assert(!JSON.stringify(service({op:'export',id:privateExp.id,sections:['turns','memory']})).includes('+1 (202) 555-0147'));
+ await reviewPrivate();await e('close').click();assert.equal(e('personal-preview').hidden,true);await originalEntry.click();
+ e('experiments').value=privateExp.id;await e('experiments').onchange();
+ const roundsBeforeTemporary=service({op:'open',id:privateExp.id}).turns.length;
+ e('temporary').checked=true;e('input').value='我的诊断是过敏性鼻炎';
+ await e('composer').onsubmit({preventDefault(){}});
+ assert.equal(requests,countBeforePrivate+1,'temporary processing calls only the reply model, not extraction');
+ assert.equal(service({op:'open',id:privateExp.id}).turns.length,roundsBeforeTemporary);
+ assert(!JSON.stringify(service({op:'export',id:privateExp.id,sections:['turns','memory']})).includes('过敏性鼻炎'));
+ assert(e('status').textContent.includes('没有提取候选或保存实验'));assert.equal(e('input').value,'');
+ e('input').value='我的健康自述仅在输入框';windowEvents.pagehide();
+ assert.equal(e('input').value,'');assert.equal(e('live').children.length,0);assert.equal(e('live').hidden,true);
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

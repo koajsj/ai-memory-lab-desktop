@@ -53,8 +53,45 @@ def sensitive(value):
         r'(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)'
         r'[\"\']?\s*[:=：]?\s*[\"\']?\s*\+?\(?(?:\d[\s().-]*){7,15}(?!\d)', numeric,re.I))
 
+PERSONAL_CATEGORIES=('contact','address','health','family')
+
+def personal_kind(value):
+    """Local risk routing only; not an exhaustive semantic classifier."""
+    text=unicodedata.normalize('NFKC',str(value))
+    if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b',text):return 'contact'
+    if sensitive(text) and re.search(r'\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|(?:手机号?|联系|电话|phone|mobile|telephone)[^\n]{0,20}\d',text,re.I):return 'contact'
+    for category,pattern in (
+        ('address',r'(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|home address|I live at)\s*[:：是为]?\s*\S+'),
+        ('health',r'(?:我(?:的诊断|患有|确诊|有过敏|的病史|的健康)|my (?:diagnosis|medical history)|I (?:have been diagnosed|suffer from))'),
+        ('family',r'(?:我的?(?:家属|配偶|孩子|子女|父亲|母亲)|my (?:spouse|child|daughter|son|parent))')):
+        if re.search(pattern,text,re.I):return category
+    return None
+
+def forbidden_personal(value):
+    if isinstance(value,dict):return any(forbidden_personal(v) for v in value.values())
+    if isinstance(value,list):return any(forbidden_personal(v) for v in value)
+    text=unicodedata.normalize('NFKC',str(value))
+    if credentials(text):return True
+    text=re.sub(r'\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b','',text,flags=re.I)
+    text=re.sub(r'(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)','',text)
+    return bool(re.search(r'(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}',text))
+
+def valid_retention(payload):
+    r=payload.get('retention')
+    return (payload.get('data_type')=='personal_information' and isinstance(r,dict)
+            and set(r)=={'category','purpose','scope','request_id','use'} and r['category'] in PERSONAL_CATEGORIES
+            and isinstance(r['purpose'],str) and 2<=len(r['purpose'])<=120 and not sensitive(r['purpose'])
+            and isinstance(r['scope'],str) and bool(re.fullmatch('[a-f0-9]{32}',r['scope']))
+            and isinstance(r['request_id'],str) and bool(re.fullmatch('[a-f0-9]{32}',r['request_id']))
+            and r['use']=='local_only' and payload.get('privacy')=='restricted'
+            and not forbidden_personal(payload.get('value')))
+
 def unsafe_fact(payload):
     """Business identifiers exempt only their value, never credential formats or metadata."""
+    if valid_retention(payload):
+        return sensitive({k:v for k,v in payload.items() if k not in ('value','retention','version')})
+    if 'retention' in payload or payload.get('data_type')=='personal_information':return True
+    if personal_kind(payload.get('value','')):return True
     business=payload.get('data_type')=='business_identifier'
     if ('key' in payload and blocked_key(payload['key'])) or credentials(payload):
         return True
@@ -79,6 +116,7 @@ class Context:
     audience: str = 'owner'
     conversation: str = 'local'
     clearance: str = 'restricted'
+    personal_grant: object = None
 
 class Store(Governance):
     def __init__(self,path,*,clock=None):
@@ -124,6 +162,17 @@ class Store(Governance):
             self.db.close(); raise
     def __enter__(self): return self
     def __exit__(self,*args): self.db.close()
+    def save_personal(self,ctx,*,seq,plan,request_id):
+        from dataclasses import replace
+        from .governance import Evidence
+        if not self.allowed(ctx,ctx.role,'write') or ctx.audience!='owner' or ctx.clearance!='restricted':
+            raise PermissionError('敏感保存范围未授权')
+        expected='experiment/'+plan['scope'].translate(str.maketrans('0123456789abcdef','abcdefghijklmnop'))
+        if ctx.conversation!=expected:raise PermissionError('确认范围与当前实验不一致')
+        retention=dict(category=plan['category'],purpose=plan['purpose'],scope=plan['scope'],request_id=request_id,use='local_only')
+        op=dict(op='set',key='personal_'+plan['category'],value=plan['value'],privacy='restricted',data_type='personal_information',retention=retention,current_correction=True,reactivate=True)
+        if not valid_retention(op):raise ValueError('敏感保存方案无效或属于禁存内容')
+        return self.apply(replace(ctx,personal_grant=retention),{'seq':seq,'ops':[op]},scope='conversation',evidence=Evidence('personal/'+request_id,'owner_direct',seq,ctx.conversation))
     @staticmethod
     def allowed(ctx,role,permission='read'):
         return (isinstance(ctx,Context) and ctx.verified is True and ctx.actor=='owner'
@@ -142,14 +191,14 @@ class Store(Governance):
             payload=parse_json(row['payload'])
             required={'value','source','confidence','privacy','ttl','version'}
             if (row['state'] not in STATES or not isinstance(payload,dict) or not required<=payload.keys()
-                    or payload.keys()-required-{'event_time','expires_at','time_floor','kind','due_at','task_status','data_type'}
+                    or payload.keys()-required-{'event_time','expires_at','time_floor','kind','due_at','task_status','data_type','retention'}
                     or any(not isinstance(payload[k],str) or not payload[k].strip() for k in ('value','source','ttl'))
                     or payload['confidence'] not in ('self_reported','unverified')
                     or payload['privacy'] not in ('private','restricted')
                     or type(payload['version']) is not int or not 1<=payload['version']<=2**63-1
                     or (payload['confidence']=='unverified' and row['state']!='pending')
                     or payload.get('kind','fact') not in ('fact','task','reminder')
-                    or payload.get('data_type','text') not in ('text','business_identifier')
+                    or payload.get('data_type','text') not in ('text','business_identifier','personal_information')
                     or unsafe_fact(payload)):
                 raise ValueError('存储事实结构或内容异常，拒绝读取')
             if payload.get('kind')=='task':
@@ -198,6 +247,8 @@ class Store(Governance):
                 permission='delete' if kind=='delete' else 'write'
                 if not self.allowed(ctx,ctx.role,permission):
                     decisions.append(self.decision('REJECT','该操作未授权')); continue
+                if op.get('retention') is not None and (ctx.personal_grant!=op.get('retention') or not valid_retention(op)):
+                    decisions.append(self.decision('REJECT','敏感保存缺少本次独立授权')); continue
                 if unsafe_fact(op):
                     decisions.append(self.decision('REJECT','敏感号码保护')); continue
                 if kind in ('temporary','reject','noop'):
@@ -228,7 +279,7 @@ class Store(Governance):
                     self._retire(ctx.role,key,seq)
                     decisions.append(self.decision(kind.upper(),
                         '清理本库该键及归档副本，保留无值防回退标记' if kind=='delete' else '退出活跃并清理无用副本；不宣称平台彻底删除')); continue
-                if set(op)-{'op','key','value','state','origin','confidence','privacy','ttl','expires_at','event_time','archive_old','reactivate','current_correction','kind','due_at','data_type'}:
+                if set(op)-{'op','key','value','state','origin','confidence','privacy','ttl','expires_at','event_time','archive_old','reactivate','current_correction','kind','due_at','data_type','retention'}:
                     raise ValueError('事实包含未支持字段')
                 value=op.get('value'); origin=op.get('origin','主人自述'); ttl=op.get('ttl','直至更新或失效')
                 if any(not isinstance(v,str) or not v.strip() or len(v)>500 for v in (value,origin,ttl)):
@@ -263,7 +314,7 @@ class Store(Governance):
                 fact_kind=op.get('kind',old.get('kind','fact') if old else 'fact')
                 if fact_kind not in ('fact','task','reminder'): raise ValueError('事实类型无效')
                 data_type=op.get('data_type',old.get('data_type','text') if old else 'text')
-                if data_type not in ('text','business_identifier'): raise ValueError('数据类型无效')
+                if data_type not in ('text','business_identifier','personal_information'): raise ValueError('数据类型无效')
                 if fact_kind!='task' and 'due_at' in op: raise ValueError('只有任务可有截止日')
                 if fact_kind=='task' and 'expires_at' in op: raise ValueError('任务截止使用due_at，不能以失效日删除任务')
                 if 'privacy' not in op:
@@ -296,6 +347,10 @@ class Store(Governance):
                 if floor: payload['time_floor']=floor
                 if 'kind' in op or (old and 'kind' in old): payload['kind']=fact_kind
                 if data_type!='text': payload['data_type']=data_type
+                if data_type=='personal_information':
+                    if not op.get('retention') or op['retention']!=ctx.personal_grant:
+                        decisions.append(self.decision('REJECT','敏感保存需要独立确认，不继承旧授权')); continue
+                    payload['retention']=op['retention']
                 if fact_kind=='task':
                     due=op.get('due_at',old.get('due_at') if old else None)
                     if due: payload['due_at']=due

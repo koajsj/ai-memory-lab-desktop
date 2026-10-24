@@ -2,6 +2,8 @@
 The catalog stores the core SQLite image and experiment state in one transaction.
 """
 import hashlib
+import secrets
+import time
 import json
 import os
 from pathlib import Path
@@ -11,7 +13,7 @@ import sys
 from tempfile import TemporaryDirectory
 import uuid
 from datetime import date
-from .engine import Store, Context, unsafe_fact, sensitive, credentials, iso
+from .engine import Store, Context, unsafe_fact, sensitive, credentials, iso, personal_kind, forbidden_personal, PERSONAL_CATEGORIES
 from .governance import Evidence
 from .json_input import parse_json
 
@@ -29,8 +31,20 @@ def short(v,maximum=20000):
     return v
 
 def safe_text(value):
-    if sensitive(value):raise ValueError(CONTENT_ERROR)
+    if sensitive(value) or personal_kind(value):raise ValueError(CONTENT_ERROR)
     return value
+
+def personal_plan(value,ident):
+    if (not isinstance(value,dict) or set(value)!={'category','value','purpose','scope'}
+            or value['category'] not in PERSONAL_CATEGORIES or value['scope']!=ident):
+        raise ValueError('保存方案或范围无效')
+    short(value['value'],500);safe_text(short(value['purpose'],120))
+    if len(value['purpose'].strip())<2 or forbidden_personal(value['value']):raise ValueError(CONTENT_ERROR)
+    if value['category']=='contact' and personal_kind('phone:'+value['value'])!='contact':raise ValueError('联系方式格式无法安全确认，请脱敏后使用')
+    return dict(value)
+
+def plan_digest(plan,token):
+    return hashlib.sha256((token+json.dumps(plan,sort_keys=True,ensure_ascii=False)).encode()).hexdigest()
 
 def model_memory(m):
     record=dict(key=m['key'],value=m['payload']['value'],version_id=m['version_id'],state=m['part'])
@@ -249,7 +263,17 @@ class Service:
                 out=dict(format=FORMAT,mode=state['mode'],engine=state['engine'],name=state['name'],restore_supported=False)
                 if 'rules' in sections:out['rules']=state['rules']
                 if 'memory' in sections:out.update(snapshot=state['snapshot'],governance=state['governance'])
-                if 'turns' in sections:out.update(turns=state['turns'],frames=state['frames'])
+                if 'turns' in sections:
+                    out.update(turns=state['turns'],frames=json.loads(json.dumps(state['frames'])))
+                    if 'memory' not in sections:
+                        out['personal_memories_excluded']=True
+                        for frame in out['frames']:
+                            for snap in (frame['before'],frame['after']):
+                                for group in snap.values():
+                                    for key in list(group):
+                                        if group[key].get('retention'):del group[key]
+                            for record in frame['governance']['versions']:
+                                if record.get('payload',{} ) and record['payload'].get('retention'):record['payload']=None
                 return out
             if op=='open':return state
         # Copy-on-write: failures discard the temporary core. Never accept a DB snapshot from a file.
@@ -259,7 +283,49 @@ class Service:
             with Store(path) as store:
                 scope_id='experiment/'+ident.translate(str.maketrans('0123456789abcdef','abcdefghijklmnop'))
                 ctx=Context('owner',state['role'],True,conversation=scope_id)
-                if op=='rename':state['name']=safe_text(short(q.get('name'),80))
+                privacy_request=state.pop('privacy_request',None)
+                if op=='temporary':
+                    if state['pending']:raise ValueError('请先结束当前请求')
+                    temporary_text=short(q.get('input'))
+                    if q.get('allow_transfer') is not True or forbidden_personal(temporary_text):raise ValueError('临时模型传输未授权或包含禁传内容')
+                elif op=='privacy_review':
+                    if state['pending'] or q.get('save_intent') is not True:raise ValueError('只在本人明确要求本地长期保存时准备确认')
+                    plan=personal_plan(q.get('plan'),ident)
+                    existing=store.read(ctx,ctx.role)['current'].get('personal_'+plan['category'])
+                    already_saved=(existing and existing.get('retention') and existing['value']==plan['value']
+                            and existing['retention']['purpose']==plan['purpose'] and existing['retention']['scope']==plan['scope'])
+                    if already_saved and not privacy_request:return dict(state,personal_already_saved=True)
+                    if not already_saved:
+                        token=secrets.token_hex(32);request_id=uuid.uuid4().hex
+                        state['privacy_request']=dict(id=request_id,digest=plan_digest(plan,token),expires_at=int(time.time())+120)
+                elif op=='privacy_cancel':
+                    pass  # Drop the value-free control state; raw content never reached SQLite.
+                elif op in ('privacy_commit','privacy_delete'):
+                    if state['pending']:raise ValueError('请先结束当前请求')
+                    before=store.read(ctx,ctx.role);seq=state['revision']+1
+                    if op=='privacy_commit':
+                        plan=personal_plan(q.get('plan'),ident);token=q.get('token')
+                        if (q.get('confirmed') is not True or not privacy_request or q.get('request_id')!=privacy_request['id']
+                                or not isinstance(token,str) or not re.fullmatch('[a-f0-9]{64}',token)
+                                or time.time()>=privacy_request['expires_at']
+                                or not secrets.compare_digest(plan_digest(plan,token),privacy_request['digest'])):
+                            raise ValueError('保存确认已失效或与内容、用途及范围不一致；请重新提供')
+                        result=store.save_personal(ctx,seq=seq,plan=plan,request_id=privacy_request['id'])
+                        saved=store.read(ctx,ctx.role)['current'].get('personal_'+plan['category'])
+                        if not saved or saved['value']!=plan['value'] or any(d['action']=='REJECT' for d in result['decisions']):
+                            raise ValueError('内核未接受保存；原状态未改变')
+                    else:
+                        key=q.get('key')
+                        if q.get('confirmed') is not True or key not in {'personal_'+c for c in PERSONAL_CATEGORIES}:raise ValueError('删除范围无效或未确认')
+                        result=store.apply(ctx,{'seq':seq,'ops':[dict(op='delete',key=key)]})
+                    after=store.read(ctx,ctx.role);round_number=len(state['turns'])+1
+                    input_text='本人确认本地私人记忆保存方案' if op=='privacy_commit' else '本人要求删除本地私人记忆'
+                    state['turns'].append(dict(input=input_text,reply=None,candidates=[],results={},usage=None,status='local',model={}))
+                    flat=lambda snap:{p+'.'+k:v for p,g in snap.items() for k,v in g.items()}
+                    a,b=flat(after),flat(before)
+                    state['frames'].append(dict(round=round_number,source='owner',input=input_text,before=before,after=after,diff=dict(added=sorted(a.keys()-b.keys()),removed=sorted(b.keys()-a.keys()),changed=sorted(k for k in a.keys()&b.keys() if a[k]!=b[k])),decisions=result['decisions'],governance=store.export_governance(ctx)))
+                    state['context_start']=len(state['turns'])
+                elif op=='rename':state['name']=safe_text(short(q.get('name'),80))
                 elif op=='prepare':
                     if state['pending']:raise ValueError('上一请求尚未结束，请先取消或恢复')
                     if len(state['turns'])>=300:raise ValueError('实验已达300轮，请导出后新建')
@@ -313,7 +379,7 @@ class Service:
                         if usage is not None and (not isinstance(usage,dict) or set(usage)-{'input','output','total'} or any(type(v) is not int or v<0 for v in usage.values())):raise ValueError('Token用量无效')
                         prechecked={};evidence_checks={}
                         for index,c in enumerate(proposed):
-                            if c.get('privacy')=='high' or unsafe_fact(c):
+                            if c.get('privacy')=='high' or unsafe_fact(c) or personal_kind(c) or re.search(r'(?:health|address|family|medical|residence|contact)',c['key'],re.I):
                                 clean={k:c[k] for k in ('op','key','basis')};c.clear();c.update(clean,erased=True)
                                 prechecked[str(index)]={'risk_category':'sensitive_or_forbidden','decisions':[dict(action='REJECT',reason='接入层禁止保存高敏内容或治理字段；候选原值未保存')]}
                             else:
@@ -339,6 +405,8 @@ class Service:
                     if type(index) is not int or not 0<=index<len(turn['candidates']) or str(index) in turn['results']:raise ValueError('候选不存在或已处理')
                     candidate=turn['candidates'][index].copy();confirmed=q.get('confirm') is True
                     candidates([candidate])
+                    if personal_kind(candidate.get('value','')) or re.search(r'(?:health|address|family|medical|residence|contact)',candidate['key'],re.I) and candidate['op'] in ('set','derive'):
+                        raise ValueError('个人信息候选需要独立的本地保存流程，不能普通确认')
                     reason=evidence_error(candidate,state,turn,len(state['turns']),store,ctx)
                     if reason:raise ValueError(reason)
                     evidence=candidate.pop('evidence')
@@ -431,6 +499,14 @@ class Service:
             self.db.commit()
         except Exception:
             self.db.rollback();raise
+        if op in ('privacy_commit','privacy_delete'):
+            saved=self.db.execute('SELECT state,core FROM experiments WHERE id=?',(ident,)).fetchone()
+            if not saved or saved[0]!=encoded:raise ValueError('保存已提交但最终状态无法核对，请重新打开实验')
+            self._check_core(parse_json(saved[0]),saved[1],ident)
+        if op=='temporary':return dict(temporary=True,state=state,prompt=dict(system=APPLICATION,rules=state['rules'],messages=[dict(role='user',content=temporary_text)],allowed=[]))
+        if op=='privacy_review':
+            if state.get('privacy_request'):state['privacy_token']=token
+            else:state['personal_already_saved']=True
         if op=='prepare':
             # This response alone contains the prompt. It is not stored twice in SQLite.
             state=json.loads(json.dumps(state))
@@ -449,7 +525,7 @@ def main():
         result=Service(Path(sys.argv[1])).call(parse_json(raw.decode('utf-8')))
         print(json.dumps({'ok':True,'result':result},ensure_ascii=False))
     except (ValueError,KeyError,TypeError,IndexError,OSError,sqlite3.Error,RecursionError) as error:
-        public_errors={CONTENT_ERROR,'实验达到8MB容量，请导出后新建','模型候选缺少依据类型，不能自动补成用户确认','候选依据类型无效','实验内核与保存状态不一致','实验历史版本与内核不一致','实验历史快照与内核不一致'}
+        public_errors={CONTENT_ERROR,'保存已提交但最终状态无法核对，请重新打开实验','保存确认已失效或与内容、用途及范围不一致；请重新提供','个人信息不自动发送或保存；请使用本地私人记忆入口，或先脱敏','敏感保存需要独立确认，不继承旧授权','联系方式格式无法安全确认，请脱敏后使用','实验达到8MB容量，请导出后新建','模型候选缺少依据类型，不能自动补成用户确认','候选依据类型无效','实验内核与保存状态不一致','实验历史版本与内核不一致','实验历史快照与内核不一致'}
         reason=str(error) if str(error) in public_errors else '实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。'
         print(json.dumps({'ok':False,'error':reason},ensure_ascii=False))
         return 1

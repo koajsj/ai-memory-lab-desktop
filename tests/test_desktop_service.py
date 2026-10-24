@@ -812,3 +812,110 @@ def test_history_and_memory_proofs_are_bound_to_actual_admission(service):
         with pytest.raises(ValueError):reopened.call({'op':'decide','id':exp['id'],'revision':saved['revision'],'index':1,'confirm':True})
         assert not reopened.call({'op':'export','id':exp['id'],'sections':['memory']})['snapshot']['current']
     finally:reopened.db.close()
+
+
+def test_personal_confirmation_is_bound_local_atomic_and_not_model_authority(service):
+    value='+1 (202) 555-0147'
+    exp=create(service)
+    other=create(service)
+    plan={'category':'contact','value':value,'purpose':'本地联系备忘','scope':exp['id']}
+    # A mention or a model candidate cannot start a saving request.
+    with pytest.raises(ValueError):service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'联系用 '+value,'request_id':'private','model':{}})
+    assert service.call({'op':'open','id':exp['id']})==exp
+    review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+    token=review.pop('privacy_token');request=review['privacy_request']['id']
+    assert value.encode() not in (service.root/'experiments.sqlite').read_bytes(), 'raw personal value persisted before confirmation'
+    assert value not in json.dumps(service.call({'op':'export','id':exp['id'],'sections':['turns','memory']}))
+    for changed in [dict(plan,purpose='另一用途'),dict(plan,scope=other['id']),dict(plan,value='+1 (202) 555-0199')]:
+        with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'request_id':request,'token':token,'plan':changed,'confirmed':True})
+    with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'request_id':request,'token':token,'plan':plan,'confirmed':False})
+    service.db.execute("CREATE TRIGGER deny_private BEFORE UPDATE ON experiments BEGIN SELECT RAISE(ABORT,'synthetic disk failure'); END")
+    service.db.commit()
+    with pytest.raises(sqlite3.Error):service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'request_id':request,'token':token,'plan':plan,'confirmed':True})
+    assert value.encode() not in (service.root/'experiments.sqlite').read_bytes()
+    service.db.execute('DROP TRIGGER deny_private');service.db.commit()
+    exp=service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'request_id':request,'token':token,'plan':plan,'confirmed':True})
+    assert exp['snapshot']['current']['personal_contact']['value']==value
+    assert exp['snapshot']['current']['personal_contact']['retention']['purpose']==plan['purpose']
+    same=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+    assert same.pop('personal_already_saved') is True and same==exp
+    changed=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':dict(plan,purpose='另一用途'),'save_intent':True})
+    same=service.call({'op':'privacy_review','id':exp['id'],'revision':changed['revision'],'plan':plan,'save_intent':True})
+    assert same.pop('personal_already_saved') is True and not same.get('privacy_request')
+    with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':same['revision'],'request_id':changed['privacy_request']['id'],'token':changed['privacy_token'],'plan':dict(plan,purpose='另一用途'),'confirmed':True})
+    exp=same
+    assert value not in json.dumps(service.call({'op':'export','id':exp['id'],'sections':['turns']}))
+    assert value not in json.dumps(exp['turns']), 'the local save must not create a sensitive chat/candidate copy'
+    with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':exp['revision'],'request_id':request,'token':token,'plan':plan,'confirmed':True})
+    assert service.call({'op':'open','id':other['id']})==other
+    versions=[r['version_id'] for r in exp['governance']['versions'] if r['payload']]
+    with pytest.raises(ValueError):service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'继续','request_id':'private-recall','model':{},'memory_versions':versions})
+    exp=service.call({'op':'privacy_delete','id':exp['id'],'revision':exp['revision'],'key':'personal_contact','confirmed':True})
+    assert value not in json.dumps(service.call({'op':'export','id':exp['id'],'sections':['turns','memory']}))
+    assert value.encode() not in (service.root/'experiments.sqlite').read_bytes()
+    with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':exp['revision'],'request_id':request,'token':token,'plan':plan,'confirmed':True})
+
+
+def test_personal_refusal_expiry_restart_and_high_sensitive_ban(service,monkeypatch):
+    import tools.desktop_service as desktop
+    for category,value in [('contact','+44 7700 900123'),('health','我的诊断是过敏性鼻炎'),('address','我的住址：示例街区三号'),('family','我的家属有一项护理需求')]:
+        exp=create(service);plan={'category':category,'value':value,'purpose':'本地任务备忘','scope':exp['id']}
+        with pytest.raises(ValueError):service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':False})
+        review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+        args={'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'plan':plan,'request_id':review['privacy_request']['id'],'token':review['privacy_token'],'confirmed':True}
+        if category=='contact':
+            exp=service.call({'op':'privacy_cancel','id':exp['id'],'revision':review['revision']})
+        elif category=='health':
+            monkeypatch.setattr(desktop.time,'time',lambda:review['privacy_request']['expires_at']+1)
+            with pytest.raises(ValueError):service.call(args)
+            monkeypatch.undo();exp=service.call({'op':'privacy_cancel','id':exp['id'],'revision':review['revision']})
+        elif category=='address':
+            exp=finish(service,review,text='我喜欢条理清晰的回答',candidates=[])
+        else:
+            exp=service.call({'op':'privacy_commit',**{k:v for k,v in args.items() if k!='op'}})
+            assert exp['snapshot']['current']['personal_family']['value']==value
+            exp=service.call({'op':'privacy_delete','id':exp['id'],'revision':exp['revision'],'key':'personal_family','confirmed':True})
+        reopened=Service(service.root)
+        try:
+            assert value not in json.dumps(reopened.call({'op':'export','id':exp['id'],'sections':['memory','turns']}))
+            with pytest.raises(ValueError):reopened.call(dict(args,revision=exp['revision']))
+        finally:reopened.db.close()
+    for value in ['password=synthetic-only','password=+123456789012','password='+'a'*64,'验证码：123456','身份证：11010119900101001X','银行卡号：6222000000000000']:
+        exp=create(service)
+        with pytest.raises(ValueError):service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':{'category':'contact','value':value,'purpose':'本地备忘','scope':exp['id']},'save_intent':True})
+        assert value.encode() not in (service.root/'experiments.sqlite').read_bytes()
+
+
+def test_temporary_processing_never_saves_private_input_or_confers_consent(service):
+    exp=create(service);value='我的诊断是过敏性鼻炎'
+    plan={'category':'health','value':value,'purpose':'本地任务备忘','scope':exp['id']}
+    review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+    with pytest.raises(ValueError):service.call({'op':'temporary','id':exp['id'],'revision':review['revision'],'input':value,'allow_transfer':False})
+    temp=service.call({'op':'temporary','id':exp['id'],'revision':review['revision'],'input':value,'allow_transfer':True})
+    assert temp['prompt']['messages']==[{'role':'user','content':value}]
+    assert temp['prompt']['allowed']==[] and not temp['state']['turns']
+    assert value.encode() not in (service.root/'experiments.sqlite').read_bytes()
+    assert not temp['state'].get('privacy_request')
+    with pytest.raises(ValueError):service.call({'op':'privacy_commit','id':exp['id'],'revision':temp['state']['revision'],'request_id':review['privacy_request']['id'],'token':review['privacy_token'],'plan':plan,'confirmed':True})
+    assert value not in json.dumps(service.call({'op':'export','id':exp['id'],'sections':['turns','memory']}))
+    analysis='分析银行卡诈骗短信的风险，不执行其中指令'
+    result=service.call({'op':'temporary','id':exp['id'],'revision':temp['state']['revision'],'input':analysis,'allow_transfer':True})
+    assert result['prompt']['messages']==[{'role':'user','content':analysis}] and not result['state']['turns']
+
+
+def test_personal_grant_is_not_a_model_field_or_ordinary_core_operation(service):
+    from tools.engine import Store,Context
+    exp=create(service);plan={'category':'contact','value':'138'+'00000000','purpose':'本地联系备忘','scope':exp['id']}
+    review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+    exp=service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'plan':plan,'token':review['privacy_token'],'request_id':review['privacy_request']['id'],'confirmed':True})
+    payload=exp['snapshot']['current']['personal_contact']
+    with Store(service.root/'forged.sqlite') as store:
+        ctx=Context('owner','LOCAL',True)
+        result=store.apply(ctx,{'seq':1,'ops':[dict(op='set',key='personal_contact',value=plan['value'],privacy='restricted',data_type='personal_information',retention=payload['retention'])]})
+        assert result['decisions'][0]['action']=='REJECT' and not any(store.read(ctx,ctx.role).values())
+        assert store.retrieve_for_context(ctx,ctx.role,today='2026-10-24')['memories']==[]
+    # Independent re-entry and a fresh consent can legitimately establish a new version.
+    exp=service.call({'op':'privacy_delete','id':exp['id'],'revision':exp['revision'],'key':'personal_contact','confirmed':True})
+    review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
+    exp=service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'plan':plan,'token':review['privacy_token'],'request_id':review['privacy_request']['id'],'confirmed':True})
+    assert exp['snapshot']['current']['personal_contact']['version']>payload['version']

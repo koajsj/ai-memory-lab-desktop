@@ -418,6 +418,7 @@ class Governance:
         if not r or not self._scope_allowed(ctx,r):return 'scope'
         if r['policy_version']!=POLICY:return 'policy'
         if r['lifecycle'] not in ('current','completed') or r['payload'] is None:return 'lifecycle'
+        if r['payload'].get('retention'):return 'local_only'
         if r['authority_class']!='direct' or r['payload'].get('confidence')!='self_reported' or any(x.get('revoked') for x in r['source']):return 'provenance'
         if r['privacy']=='restricted' and ctx.clearance!='restricted':return 'sensitivity'
         if r['effective_at'] and r['effective_at']>today:return 'future'

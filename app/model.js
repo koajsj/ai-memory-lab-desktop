@@ -3,8 +3,21 @@
   const partitions=['current','completed','history','pending'];
   const states={current:{name:'当前有效',color:0x1b6c80},history:{name:'历史',color:0x737d89},pending:{name:'待核实',color:0xa86f0c},retired:{name:'已退出标记',color:0x737d89},task:{name:'进行中任务',color:0x2f70bb},completed:{name:'已完成',color:0x1b6c80}};
   const fields={project:'图册项目',preference:'回答偏好',catalogue:'图册目录',license_check:'图片许可核对',external_claim:'外部线索',summary:'线索摘要',summary_again:'二次摘要',future_goal:'未来目标',constraint:'关键约束',name:'姓名',city:'城市',occupation:'职业',family:'家庭',residence:'居住区域',commute:'通勤',health:'健康反馈',health_habit:'生活建议',spouse_job:'配偶职业',daughter_school:'子女学校',study:'学习目标',pmp:'PMP证书',intro_age:'初次自述年龄',layoff_rumor:'裁员传闻',opportunity:'招聘线索',opportunity_followup:'本人跟进任务',gym:'游泳安排',car_care:'车辆保养',med_pickup:'原取药安排',art_class:'美术班安排'};
-  const blocked=/^(bank_account|id_number|phone|password|verification_code|otp|access_token|token|api_key|secret_key|private_key|rules|system_prompt|user_md)$/i;
-  const isProtectedKey=key=>blocked.test(key.replace(/__previous$/,'').split('__').at(-1));
+  const protectedFields=new Set(["access_token", "account_password", "api_key", "api_token", "auth_token", "bank_account", "bank_account_number", "bank_card", "bank_card_number", "bearer_token", "cellphone", "client_secret", "contact_details", "contact_info", "contact_number", "id_card", "id_card_number", "id_number", "identity_card", "identity_card_number", "identity_number", "mobile", "mobile_number", "mobile_phone", "otp", "passcode", "password", "phone", "phone_number", "private_key", "pwd", "rules", "secret_key", "session_cookie", "system_prompt", "telephone", "token", "user_md", "verification_code", "口令", "密码", "密钥", "手机号", "手机号码", "电话", "电话号码", "短信验证码", "私钥", "联系方式", "联系电话", "访问令牌", "身份证", "身份证号", "身份证号码", "银行卡", "银行卡号", "银行卡号码", "银行账号", "银行账户", "验证码"]);
+  function isProtectedKey(value){
+    const key=String(value).replace(/__previous$/,'').split('__').at(-1).normalize('NFKC')
+      .replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2').replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fff]+/g,'_').replace(/^_+|_+$/g,'');
+    return protectedFields.has(key)||[...protectedFields].some(name=>key.endsWith('_'+name));
+  }
+  const credentialPattern=new RegExp("(?:https?://[^\\s/@]+@|[?&](?:api[_-]?key|api[_-]?token|access[_-]?token|password|client[_-]?secret)=[^&#\\s]+|\\bsk-[A-Za-z0-9_-]{16,}|\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|A[KS]IA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{15,})|\\b(?:Bearer|Basic)\\s+[A-Za-z0-9._~+/-]{8,}=*|\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|(?:password|passcode|pwd|otp|verification[_ -]?code|api[_ -]?(?:key|token)|access[_ -]?token|auth[_ -]?token|client[_ -]?secret|密码|口令|动态码|(?:短信)?验证码)[\\\"\\']?\\s*(?:[=:：]|为|是)\\s*[\\\"\\']?[^\\s\\\"\\',;，；]{4,})","i");
+  const publicIdPattern=new RegExp("\\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\\b","gi");
+  const sensitiveNumberPattern=new RegExp("(?<![A-Za-z0-9])(?:\\d[\\s-]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\\s*[:=：]?\\s*[0-9xX* -]{4,}|(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)[\\\"\\']?\\s*[:=：]?\\s*[\\\"\\']?\\s*\\+?\\(?(?:\\d[\\s().-]*){7,15}(?!\\d)","i");
+  function isSensitive(value){
+    if(value&&typeof value==='object')return Object.entries(value).some(([key,item])=>isProtectedKey(key)||isSensitive(item));
+    const text=String(value).normalize('NFKC');
+    return credentialPattern.test(text)||sensitiveNumberPattern.test(text.replace(publicIdPattern,''));
+  }
   const sourceNames={owner:'主人自述',stranger:'未核验第三方',push:'外部推送',system:'外部系统内容'};
   function label(k){
     const base=k.replace(/__previous$/,''),split=base.lastIndexOf('__'),field=base.slice(split+2),project=base.slice(0,split);
@@ -25,10 +38,10 @@
     assert(depth<=16&&++count.n<=120000,'数据层级或节点数超限');
     if(typeof value==='string'){
       assert(value.length<=16000,'单项文本过长');
-      assert((['data.policy.sha256','policy.sha256'].includes(path.join('.'))&&/^[a-f0-9]{64}$/.test(value))||!/[0-9]{13,}/.test(value.normalize('NFKC').replace(/[\s-]/g,'')),'文本中疑似敏感长号码，拒绝导入');
+      assert((['data.policy.sha256','policy.sha256'].includes(path.join('.'))&&/^[a-f0-9]{64}$/.test(value))||!isSensitive(value),'文本中疑似敏感长号码，拒绝导入');
     }
     else if(value&&typeof value==='object')for(const [k,v] of Object.entries(value)){
-      assert(!['__proto__','prototype','constructor'].includes(k),'数据含不安全属性');guardTree(v,depth+1,count,[...path,k]);
+      assert(!['__proto__','prototype','constructor'].includes(k)&&!isProtectedKey(k),'数据含不安全属性');guardTree(v,depth+1,count,[...path,k]);
     }
   }
   function snapshot(s){
@@ -41,7 +54,7 @@
       assert(['private','restricted'].includes(p.privacy)&&['self_reported','unverified'].includes(p.confidence),'隐私或可信度标记不受支持');
       assert(!(p.confidence==='unverified'&&part!=='pending'),'未核实事实不得位于可信分区');
       assert(!isProtectedKey(key)&&p.privacy!=='high','拒绝导入高敏或治理字段');
-      assert(!/[0-9]{13,}/.test((p.value+p.source).normalize('NFKC').replace(/[\s-]/g,'')),'疑似敏感长号码，拒绝导入');
+      assert(!isSensitive(p),'疑似敏感长号码，拒绝导入');
       if(Object.hasOwn(p,'kind'))assert(['fact','task','reminder'].includes(p.kind),'不支持的事实类型');
       if(Object.hasOwn(p,'ttl'))assert(typeof p.ttl==='string'&&!!p.ttl.trim(),'时效说明无效');
       for(const field of ['event_time','expires_at','due_at','time_floor'])if(Object.hasOwn(p,field)){
@@ -266,6 +279,6 @@
       {index:f.length-1,title:'最终状态与可用依据',view:'overview'}];
     const seen=new Set(),unique=stops.filter(s=>s.index>=0&&!seen.has(s.index)&&seen.add(s.index));const dwell=Math.floor(30000/unique.length)/1000;let used=0;return unique.map((s,i)=>{const seconds=i===unique.length-1?30-used:dwell;used+=seconds;return {...s,seconds};});
   }
-  const api={partitions,states,sourceNames,label,category,isProtectedKey,adapt,parse,parseJSON,encode,graph,roundView,events,position,controller,tour};
+  const api={partitions,states,sourceNames,label,category,isProtectedKey,isSensitive,adapt,parse,parseJSON,encode,graph,roundView,events,position,controller,tour};
   if(typeof module!=='undefined')module.exports=api;else root.MemoryModel=api;
 })(typeof window!=='undefined'?window:globalThis);

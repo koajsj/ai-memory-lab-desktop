@@ -59,8 +59,8 @@ def check(binary):
                 child.communicate()
         assert invoke({'op': 'open', 'id': exp['id']}) == exp
         p = invoke({'op': 'prepare', 'id': exp['id'], 'revision': exp['revision'], 'request_id': 'r', 'input': '我偏好简洁回答', 'model': {}})
-        exp = invoke({'op': 'finish', 'id': exp['id'], 'revision': p['revision'], 'request_id': 'r', 'reply': '模拟HTTP测试响应', 'usage': None, 'candidates': [{'op': 'set', 'key': 'preference', 'value': '简洁回答', 'basis': 'self_report'}]})
-        exp = invoke({'op': 'decide', 'id': exp['id'], 'revision': exp['revision'], 'index': 0, 'confirm': True})
+        exp = invoke({'op': 'finish', 'id': exp['id'], 'revision': p['revision'], 'request_id': 'r', 'reply': '模拟HTTP测试响应', 'usage': None, 'candidates': [{'op': 'set', 'key': 'preference', 'value': '简洁回答', 'basis': 'self_report', 'evidence': {'source': 'current_input', 'quote': '我偏好简洁回答'}}]})
+        exp = invoke({'op': 'decide', 'id': exp['id'], 'revision': exp['revision'], 'index': 0, 'confirm': True, 'source_confirmation': {'round': 2, 'index': 0, 'evidence': {'source': 'current_input', 'quote': '我偏好简洁回答'}, 'candidate': exp['turns'][-1]['candidates'][0]}})
         assert exp['snapshot']['current']['preference']['value'] == '简洁回答'
         assert invoke({'op': 'open', 'id': exp['id']}) == exp
         exported = invoke({'op': 'export', 'id': exp['id'], 'sections': ['rules', 'memory']})

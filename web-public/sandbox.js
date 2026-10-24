@@ -25,7 +25,7 @@ function create(policy){
  check(typeof x.project==='string'&&/^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(x.project),'项目仅支持24位以内字母、数字、下划线');
  check(typeof x.key==='string'&&/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(x.key)&&!M.isProtectedKey(x.key),'字段无效或属于高敏／治理字段');
  check(['owner_direct','external'].includes(x.source)&&['fact','task'].includes(x.kind)&&['private','restricted'].includes(x.privacy),'来源、类型或隐私无效');
- check(typeof x.value==='string'&&x.value.length<=1000&&!/[0-9]{13,}/.test(x.value.normalize('NFKC').replace(/[\s-]/g,'')),'内容过长或包含高敏长号码');
+ check(typeof x.value==='string'&&x.value.length<=1000&&!M.isSensitive(x.value),'内容过长或包含高敏长号码');
  check(Array.isArray(x.parents)&&x.parents.length<=8&&x.parents.every(id=>typeof id==='string'&&id.length<=120),'派生引用无效');
  for(const k of ['date','effective','expires','due'])if(x[k])check(iso(x[k]),'日期须为有效YYYY-MM-DD');
  check(!x.effective||!x.expires||x.expires>x.effective,'失效日期须晚于生效日期');check(x.kind!=='task'||!x.expires,'任务截止使用截止日，不使用信息失效日');

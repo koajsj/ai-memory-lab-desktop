@@ -16,31 +16,51 @@ BLOCKED = {'bank_account','id_number','phone','password','verification_code','ot
 KEY = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 
 def blocked_key(value):
-    key=re.sub(r'([a-z0-9])([A-Z])',r'\1_\2',unicodedata.normalize('NFKC',str(value))).lower()
+    key=unicodedata.normalize('NFKC',str(value))
+    key=re.sub(r'([A-Z]+)([A-Z][a-z])',r'\1_\2',key)
+    key=re.sub(r'([a-z0-9])([A-Z])',r'\1_\2',key).lower()
     key=re.sub(r'[^a-z0-9\u4e00-\u9fff]+','_',key).strip('_')
     aliases=BLOCKED|{'mobile','mobile_phone','mobile_number','phone_number','telephone','cellphone','contact_number',
-                    'contact_details','contact_info','identity_number','identity_card','bank_card',
-                    'bank_card_number','bank_account_number','id_card','id_card_number','account_password','passcode','api_token','auth_token','bearer_token',
-                    'client_secret','session_cookie','手机号','手机号码','电话','联系方式','身份证号','银行卡号','银行账号','密码','验证码','密钥','访问令牌','私钥'}
+                    'contact_details','contact_info','identity_number','identity_card','identity_card_number','bank_card',
+                    'bank_card_number','bank_account_number','id_card','id_card_number','account_password','passcode','pwd','api_token','auth_token','bearer_token',
+                    'client_secret','session_cookie','手机号','手机号码','电话','电话号码','联系电话','联系方式','身份证','身份证号','身份证号码',
+                    '银行卡','银行卡号','银行卡号码','银行账号','银行账户','密码','口令','验证码','短信验证码','密钥','访问令牌','私钥'}
     return key in aliases or any(key.endswith('_'+name) for name in aliases)
 
 def credentials(value):
+    if isinstance(value,dict):return any((blocked_key(k) and v not in (None,'')) or credentials(k) or credentials(v) for k,v in value.items())
+    if isinstance(value,list):return any(credentials(v) for v in value)
     text=unicodedata.normalize('NFKC',str(value))
-    return bool(re.search(r'(?:https?://[^\s/@:]+:[^\s/@]+@|\bsk-[A-Za-z0-9_-]{16,}|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{15,})|\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|(?:password|api[_ -]?key|access[_ -]?token|client[_ -]?secret|密码|验证码)\s*[=:：]\s*[\"\']?[A-Za-z0-9_~+/-]{4,})',text,re.I))
+    return bool(re.search(
+        r'(?:https?://[^\s/@]+@|[?&](?:api[_-]?key|api[_-]?token|access[_-]?token|password|client[_-]?secret)=[^&#\s]+|'
+        r'\bsk-[A-Za-z0-9_-]{16,}|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|A[KS]IA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{15,})|'
+        r'\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/-]{8,}=*|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|'
+        r'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|'
+        r'(?:password|passcode|pwd|otp|verification[_ -]?code|api[_ -]?(?:key|token)|access[_ -]?token|auth[_ -]?token|client[_ -]?secret|密码|口令|动态码|(?:短信)?验证码)'
+        r'[\"\']?\s*(?:[=:：]|为|是)\s*[\"\']?[^\s\"\',;，；]{4,})',text,re.I))
 
 def sensitive(value):
-    text = unicodedata.normalize('NFKC', str(value))
-    return credentials(text) or bool(re.search(r'(?<!\d)(?:\d[\s-]*){13,}(?:[xX])?(?!\d)|(?:手机号?|手机号码|电话|联系方式|contact[_ -]?phone|phone(?:[_ -]?number)?|mobile)\s*[\"\']?\s*[:=：]?\s*[\"\']?\s*(?:\+?86[ -]?)?1[3-9]\d{9}(?!\d)', text,re.I))
+    if isinstance(value,dict):return any((blocked_key(k) and v not in (None,'')) or sensitive(k) or sensitive(v) for k,v in value.items())
+    if isinstance(value,list):return any(sensitive(v) for v in value)
+    text=unicodedata.normalize('NFKC',str(value))
+    # Do not treat digit runs inside UUIDs/hashes as identifiers or bare 11-digit
+    # business numbers as phones. Explicit labels carry contact semantics.
+    numeric=re.sub(r'\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b','',text,flags=re.I)
+    return credentials(text) or bool(re.search(
+        r'(?<![A-Za-z0-9])(?:\d[\s-]*){13,19}[xX]?(?![A-Za-z0-9])|'
+        r'(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}|'
+        r'(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)'
+        r'[\"\']?\s*[:=：]?\s*[\"\']?\s*\+?\(?(?:\d[\s().-]*){7,15}(?!\d)', numeric,re.I))
 
 def unsafe_fact(payload):
-    """业务编号须由可信提取端明确分类；不豁免来源等元数据或高敏类别。"""
+    """Business identifiers exempt only their value, never credential formats or metadata."""
     business=payload.get('data_type')=='business_identifier'
-    if ('key' in payload and blocked_key(payload['key'])) or credentials(json.dumps(payload,ensure_ascii=False)):
+    if ('key' in payload and blocked_key(payload['key'])) or credentials(payload):
         return True
     if business and not re.fullmatch(r'[A-Za-z0-9._:/-]{1,80}',payload.get('value','')):
         return True
     checked={k:v for k,v in payload.items() if k!='version' and not (business and k=='value')}
-    return sensitive(json.dumps(checked,ensure_ascii=False))
+    return sensitive(checked)
 
 def iso(value):
     if not isinstance(value,str) or date.fromisoformat(value).isoformat()!=value:

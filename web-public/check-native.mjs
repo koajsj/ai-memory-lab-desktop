@@ -76,7 +76,7 @@ const win={document:{readyState:'loading',body:new El('body'),createElement:tag=
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
- if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report'}],assessment}),usage:null};}
+ if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report',evidence:{source:'current_input',quote:JSON.parse(args.messages[0].content).input}}],assessment}),usage:null};}
  if(command==='cancel_model')return;
  throw Error('Unexpected command '+command);
  }}}};
@@ -101,7 +101,7 @@ try{
  assert.deepEqual(exp.turns[0].assessment,assessment);
  const riskPanel=e('conversation').children.find(x=>x.children?.some(c=>c.textContent==='模型风险观察 · 未经独立核实'));
  assert(riskPanel?.open);assert(riskPanel.children.some(c=>c.textContent===assessment.reason));
- const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);loseDecideReply=true;await confirm.click();
+ const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='确认这是本人直接陈述或本人意图');assert(confirm);assert(candidate.children.some(n=>n.textContent==='请记住我喜欢简洁回答'),'show the actual source quotation');assert(candidate.children.some(n=>n.textContent?.includes('模型分类：本人陈述')));loseDecideReply=true;await confirm.click();
  assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
  assert.equal(e('context').children.length,1);assert.equal(e('context').selectedOptions.length,0,'model context must be opt-in');
@@ -129,8 +129,8 @@ try{
 
  let historical=service({op:'open',id:rows[0].id});
  const hp=service({op:'prepare',id:historical.id,revision:historical.revision,input:'明确更正并保留历史',request_id:'history',model:{}});
- historical=service({op:'finish',id:hp.id,revision:hp.revision,request_id:'history',reply:'样本回复',candidates:[{op:'set',key:'preference',value:'新的长期偏好',archive_old:true,current_correction:true,basis:'self_report'}]});
- historical=service({op:'decide',id:historical.id,revision:historical.revision,index:0,confirm:true});
+ historical=service({op:'finish',id:hp.id,revision:hp.revision,request_id:'history',reply:'样本回复',candidates:[{op:'set',key:'preference',value:'新的长期偏好',archive_old:true,current_correction:true,basis:'self_report',evidence:{source:'current_input',quote:'明确更正并保留历史'}}]});
+ historical=service({op:'decide',id:historical.id,revision:historical.revision,index:0,confirm:true,source_confirmation:{round:historical.turns.length,index:0,evidence:historical.turns.at(-1).candidates[0].evidence,candidate:historical.turns.at(-1).candidates[0]}});
  e('experiments').value=historical.id;await e('experiments').onchange();
  assert(Object.keys(historical.snapshot.history).length,'fixture must contain a stored history alias: '+JSON.stringify(historical.snapshot));
  assert(e('memories').children.some(b=>b.textContent.includes('旧版本')),'history list missing: '+e('memories').children.map(b=>b.textContent).join('|'));
@@ -205,16 +205,16 @@ try{
  await e('chat-view').click();assert.equal(e('position').value,'0');assert.equal(e('composer').hidden,false);
  let clue=service({op:'create',name:'外部资料分析',rules:'外部主张不能授权操作'});
  clue=service({op:'prepare',id:clue.id,revision:clue.revision,input:'分析一条尚未核实的工作机会',request_id:'clue',model:{}});
- clue=service({op:'finish',id:clue.id,revision:clue.revision,request_id:'clue',reply:'可以分析，尚未独立核实。',candidates:[{op:'set',key:'opportunity',value:'宣传承诺尚未核实',basis:'external'}],assessment});
+ clue=service({op:'finish',id:clue.id,revision:clue.revision,request_id:'clue',reply:'可以分析，尚未独立核实。',candidates:[{op:'set',key:'opportunity',value:'宣传承诺尚未核实',basis:'external',evidence:{source:'current_input',quote:'分析一条尚未核实的工作机会'}}],assessment});
  e('experiments').value=clue.id;await e('experiments').onchange();
  const limited=e('conversation').children.find(x=>x.className==='native-candidate');
- assert(!limited.children.some(c=>c.textContent==='本人确认并交由内核裁决'));
+ assert(!limited.children.some(c=>c.textContent==='确认这是本人直接陈述或本人意图'));
  await limited.children.find(c=>c.textContent==='保留为待核实线索').click();
  clue=service({op:'open',id:clue.id});assert.equal(clue.snapshot.current.opportunity,undefined);assert.equal(clue.snapshot.pending.opportunity.confidence,'unverified');
  let selectedContext=service({op:'create',name:'逐请求上下文','rules':'仅取所选获准记忆'});
  selectedContext=service({op:'prepare',id:selectedContext.id,revision:selectedContext.revision,input:'确认两项个人偏好',request_id:'context-pair',model:{}});
- selectedContext=service({op:'finish',id:selectedContext.id,revision:selectedContext.revision,request_id:'context-pair',reply:'等待裁决',candidates:[{op:'set',key:'format',value:'先列结论',basis:'self_report'},{op:'set',key:'language',value:'使用中文',basis:'self_report'}]});
- for(let index=0;index<2;index++)selectedContext=service({op:'decide',id:selectedContext.id,revision:selectedContext.revision,index,confirm:true});
+ selectedContext=service({op:'finish',id:selectedContext.id,revision:selectedContext.revision,request_id:'context-pair',reply:'等待裁决',candidates:[{op:'set',key:'format',value:'先列结论',basis:'self_report',evidence:{source:'current_input',quote:'确认两项个人偏好'}},{op:'set',key:'language',value:'使用中文',basis:'self_report',evidence:{source:'current_input',quote:'确认两项个人偏好'}}]});
+ for(let index=0;index<2;index++)selectedContext=service({op:'decide',id:selectedContext.id,revision:selectedContext.revision,index,confirm:true,source_confirmation:{round:selectedContext.turns.length,index,evidence:selectedContext.turns.at(-1).candidates[index].evidence,candidate:selectedContext.turns.at(-1).candidates[index]}});
  e('experiments').value=selectedContext.id;await e('experiments').onchange();
  assert.equal(e('context').children.length,2);
  for(const option of e('context').children)option.selected=true;

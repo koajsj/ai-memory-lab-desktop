@@ -27,7 +27,7 @@ function runner({call,model,cancel,onText}){
    if(cancelled)throw Error('请求已取消');
    let candidates=[],assessment=null,extractionError=false,extractionUsage=null;
    try{
-    const r=await model(profile.id,request,pending.prompt.extraction,[{role:'user',content:JSON.stringify({input,history:pending.prompt.messages.slice(0,-1),available:pending.prompt.allowed})}],false,()=>{});
+    const r=await model(profile.id,request,pending.prompt.extraction,[{role:'user',content:JSON.stringify({input,history:pending.prompt.messages.slice(0,-1),history_sources:pending.prompt.history_sources||[],available:pending.prompt.allowed})}],false,()=>{});
     if(cancelled)throw Error('请求已取消');const parsed=extracted(r.text);candidates=await call({op:'validate_candidates',candidates:parsed.candidates,assessment:parsed.assessment});assessment=parsed.assessment??null;extractionUsage=r.usage;
    }catch(error){if(cancelled)throw error;extractionError=true;}
    if(cancelled)throw Error('请求已取消');
@@ -142,16 +142,28 @@ function render(){
  if(!turn.candidates.length)ui.conversation.append(text('p','本轮没有记忆候选，模型回复没有自动写入记忆。'));
  for(const [index,c]of turn.candidates.entries()){
   const row=doc.createElement('section');row.className='native-candidate';row.append(text('strong',`${root.MemoryModel.label(c.key)} · ${c.reactivate?'建议重新建立':c.current_correction?'建议更正':operationName(c.op)}`),text('p',c.erased?'原值已清除':c.value||'不携带新值'));
+  const proof=c.evidence,checked=turn.evidence_checks?.[String(index)];
+  row.append(text('small','模型分类：'+(({self_report:'本人陈述',external:'外部主张',inference:'模型推断'})[c.basis]||'未记录')));
+  if(proof&&typeof proof.quote==='string'){
+   row.append(text('small',({current_input:'本轮用户输入',history_user:`第 ${proof.round} 轮用户输入`,memory:`获准记忆 ${proof.version_id}`})[proof.source]||'来源未核实'),text('blockquote',proof.quote));
+  }
+  if(checked)row.append(text('small',checked.reason));
   const conditions=doc.createElement('details');conditions.append(text('summary','建议的完整条件'),text('pre',JSON.stringify(c,null,2)));row.append(conditions);
   const result=turn.results[String(index)];if(result)for(const d of result.decisions)row.append(text('p',operationName(d.action)+'：'+d.reason));
   else if(frameIndex===exp.turns.length-1){
-   if(!['self_report','external','inference'].includes(c.basis)){
-    row.append(text('p','此旧建议的依据类型缺失或无效，不能裁决。请忽略后重新提出。'),button('忽略',()=>mutate('dismiss',{index})));
+   if(!['self_report','external','inference'].includes(c.basis)||!proof||checked?.status!=='verified'){
+    row.append(text('p','此建议缺少可核验的来源记录，不能直接裁决。请忽略后明确重新提出。'),button('忽略',()=>mutate('dismiss',{index})));
    }else if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference')){
     row.append(text('p','外部主张或推断不能充当操作授权，也不因重复或确认按钮变成已核实事实。'),button(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed'?'保留为待核实线索':'核验操作依据',()=>mutate('decide',{index,confirm:false})),button('忽略',()=>mutate('dismiss',{index})));
    }else{
    if(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed')row.append(button('仅存入待核实区',()=>mutate('decide',{index,confirm:false})));
-   row.append(button(c.op==='delete'?'授权删除':c.reactivate?'确认新依据并重新建立':'本人确认并交由内核裁决',async()=>{if(root.confirm(c.op==='delete'?'仅当这是你本人当前的删除意图才确认；模型的来源标记不能证明授权。删除本实验内该记忆及受影响派生，原始对话与既有导出不受影响。确认？':c.reactivate?'仅在你现在提供了独立、明确的新依据时重新建立；不能以旧记录或旧摘要恢复已删除内容。确认？':'仅当这是你本人的陈述或操作意图，且你已核对全部条件时确认。模型标记不证明来源；确认不使外部事实变真，仍须接受内核校验。'))await mutate('decide',{index,confirm:true});}),button('忽略',()=>mutate('dismiss',{index})));
+   row.append(button(c.basis==='self_report'?'确认这是本人直接陈述或本人意图':'确认派生并交由内核裁决',async()=>{
+    const prompt=c.basis==='self_report'
+     ?`请核对上方候选及原文：${proof.quote}。仅当这是你本人直接陈述或本人当前意图才确认；引用、转述、第三方主张和模型推断不能冒充本人陈述。此确认不证明外部事实真实。${c.op==='delete'?'将删除本实验内该记忆及受影响派生，原对话和既有导出不受影响。':c.reactivate?'重新建立须有独立于已删材料的新依据。':''}仍须通过内核权限、时间与冲突检查。确认？`
+     :'仅使用本轮获准的根依据派生，继承其限制，不新增来源权威。确认？';
+    if(root.confirm(prompt))await mutate('decide',{index,confirm:true,...(c.basis==='self_report'?{source_confirmation:{round:frameIndex+1,index,evidence:proof,candidate:c}}:{})});
+   }),button('忽略',()=>mutate('dismiss',{index})));
+
    }
   }ui.conversation.append(row);
  }

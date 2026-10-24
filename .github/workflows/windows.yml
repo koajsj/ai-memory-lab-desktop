@@ -8,6 +8,7 @@ on:
       - 'tools/**'
       - 'tests/**'
       - 'memory-rules.md'
+      - 'source-manifest.json'
       - 'requirements-dev.txt'
       - '.github/workflows/windows.yml'
       - '!app/**/*.md'
@@ -130,10 +131,19 @@ jobs:
           node tools/check_windows_release.mjs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $env:MEMORY_LAB_PYTHON = (Get-Command python).Source
-          python -B -m pytest -q -p no:cacheprovider tests/test_desktop_service.py -k 'not replay_export and not submission_typed'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          npm --prefix web-public run check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # Independent read-only test suites share the installed dependencies.
+          # Overlap Python/SQLite checks with JS checks; both exit codes gate packaging.
+          $testProcess = Start-Process -FilePath (Get-Command python).Source -ArgumentList '-B -m pytest -q -p no:cacheprovider tests/test_desktop_service.py' -NoNewWindow -PassThru
+          try {
+            npm --prefix web-public run check
+            $uiExit = $LASTEXITCODE
+            $testProcess.WaitForExit()
+            if ($testProcess.ExitCode -ne 0) { exit $testProcess.ExitCode }
+            if ($uiExit -ne 0) { exit $uiExit }
+          } finally {
+            if (!$testProcess.HasExited) { Stop-Process -Id $testProcess.Id -Force }
+            $testProcess.Dispose()
+          }
       - name: Build native Python kernel and verify standalone operation
         run: |
           npm --prefix app run kernel:build
@@ -191,6 +201,8 @@ jobs:
           # The standalone kernel lifecycle already ran before Tauri. The strict
           # source -> release -> extracted-payload SHA-256 checks above bind that
           # same tested EXE to this installer; don't repeat its process lifecycle.
+      - name: Include the judge's Windows guide
+        run: Copy-Item README.md app/ci-artifact/README-Windows.md
       - name: Retain verified installer as private artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -252,7 +264,9 @@ jobs:
           name: AI-Memory-Lab-windows-x64-${{ github.sha }}
           path: release-input
       - name: Verify the exact Windows artifact before publishing
-        run: node app/package-windows.mjs --verify-publishable release-input "$GITHUB_SHA"
+        run: |
+          node app/package-windows.mjs --verify-publishable release-input "$GITHUB_SHA"
+          cmp README.md release-input/README-Windows.md
       - name: Publish private Windows Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -260,7 +274,7 @@ jobs:
           version=$(node -p "require('./app/package.json').version")
           installer=$(node -e "const m=require('./release-input/windows-manifest.json');process.stdout.write(Object.keys(m.files)[0])")
           tag="windows-v${version}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          gh release create "$tag" "release-input/$installer" release-input/SHA256SUMS.txt \
+          gh release create "$tag" "release-input/$installer" release-input/SHA256SUMS.txt release-input/README-Windows.md \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "AI Memory Lab $version · Windows x64 · build $GITHUB_RUN_ID" \
             --notes "Unsigned Windows x64 installer from commit $GITHUB_SHA. Uses installed WebView2; if absent, runtime installation requires internet. Automated Windows build, tests, NSIS payload and SHA-256 verification completed in this workflow. Windows desktop installation, real model API and human interaction remain unverified."

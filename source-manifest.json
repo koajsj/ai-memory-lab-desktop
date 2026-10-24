@@ -6,20 +6,20 @@
       "sha256": "67c8553872a8e7d08366c8ec66767ef13938ea04f749c3bcdbe050c664d340af"
     },
     ".github/workflows/windows.yml": {
-      "size": 14539,
-      "sha256": "8c19b603528a3aa8f4a2e13f47c1278fa705d0cdfecfc04e6b097dccbc02dd4f"
+      "size": 15272,
+      "sha256": "1dca0d57b1256430514be7bc5b12b4bd212defb269ebb90f966ac2db67abea60"
     },
     ".gitignore": {
       "size": 291,
       "sha256": "ef4804871c16f692c884a53adb52800321534b986a3b40b18ceb86ac3f188e8b"
     },
     "README.md": {
-      "size": 645,
-      "sha256": "fa34b005569307ad99ff58d8cd3cd39ce7a4a7efae7e51d27ae964f689292efe"
+      "size": 11357,
+      "sha256": "f2632c5361c6a5fae4fa40bb1863ce380bce6791fb8558e5cd5f0d78b44ae28b"
     },
     "app/QUICKSTART.md": {
-      "size": 3960,
-      "sha256": "63c15d80cae55c20ac7540e387b1246758b72507818054514bf3dd032ae02e84"
+      "size": 822,
+      "sha256": "710dbdd430338c190ec873edecb78c66c2c73728d19738d7302f0a57ab58641d"
     },
     "app/README.md": {
       "size": 8476,
@@ -54,8 +54,8 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "app/index.html": {
-      "size": 16010,
-      "sha256": "9b24379b30d5eb5eccab3a036cfa180ebc56a5285deecb750ee617fd386041ba"
+      "size": 16002,
+      "sha256": "13b48746fcec3c4a102d72341b6ad79dfd6d270ca4fb60b99971f5aba9727c45"
     },
     "app/lab-ui.js": {
       "size": 7749,
@@ -66,8 +66,8 @@
       "sha256": "503631e8bd53003fb8c7832e178c9536396930ca7e408aacf654eac9e15af37b"
     },
     "app/native-ui.js": {
-      "size": 54971,
-      "sha256": "9ea2161dd371df64af323c187b4f98bd27ce2879e1885c45190fdeae04495f02"
+      "size": 57209,
+      "sha256": "f81ea5cb8f66d744f732c4995af742b75602cbd5121e57c2e7f16fcb14e1a77d"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -122,8 +122,8 @@
       "sha256": "4870d634bdb3ccad9be72df16e1a1994bc27ef2a512a675f84c9bf161b5a6d2a"
     },
     "app/src-tauri/src/model_api.rs": {
-      "size": 25451,
-      "sha256": "3ec1c0300e4f19c80af6cf64f0c401d0759fb0d4251247dcaebb9eca3a8e8ec8"
+      "size": 27094,
+      "sha256": "da0199ded11acbd43b8a7d23e32607eaf23866d6a4f4e9b335290af3bd25d502"
     },
     "app/src-tauri/tauri.conf.json": {
       "size": 1301,
@@ -154,8 +154,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "app/style.css": {
-      "size": 33670,
-      "sha256": "acc0d2f1d63a47892f0315a622bba5aa22e792284253b42883536d744ee7ddbe"
+      "size": 36064,
+      "sha256": "25609152f171a13450d88cecbe42a9c6af76c52bb81f810f2fb1d9f7a23eaf88"
     },
     "app/sync-frontend.mjs": {
       "size": 1425,
@@ -166,36 +166,36 @@
       "sha256": "6bb950530dfbf2cc2df42df65fb8bff6fb2b0e2fb5e13e00a9ed3f580d42b237"
     },
     "memory-rules.md": {
-      "size": 19795,
-      "sha256": "70bded28f640299b6b28b2e6fe0ebd0ec87fe030a67e2734814146bff1831cb3"
+      "size": 25626,
+      "sha256": "fd9b1bfa9031aeb4e73137834699fcc81c1dd2a06a32d0636e5a9f18a5f7bc4f"
     },
     "requirements-dev.txt": {
       "size": 77,
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 79625,
-      "sha256": "f54d5ea81ced9c0fd18e1b4f5dabd04508c247c388410b53fbdd2589efa21ce7"
+      "size": 87773,
+      "sha256": "37812e1633f1920ea0bce40bccbab6047b36e16ec913a01380265824eaa89c7e"
     },
     "tools/check_native_worker.py": {
-      "size": 5640,
-      "sha256": "b03244f96d7c8ca2dbe6ee46a134bba4bac70efbc8029b440a5c2e7779d94338"
+      "size": 5430,
+      "sha256": "15b8debc5987e6ce5b8148ea3c683b08a1e2574fab46deaeb37998a6a23a111a"
     },
     "tools/check_windows_release.mjs": {
       "size": 10989,
       "sha256": "ceb03707a708ef2c6fcb0b5f72e15be3c8088409f736b1edcb0a8ce289ef6734"
     },
     "tools/desktop_service.py": {
-      "size": 47297,
-      "sha256": "3dd46e1cde004a95227f25baa07579589ea8375f1dc051a64e169f3e3c3c3003"
+      "size": 50529,
+      "sha256": "7be45d9f26afcefb8ddd4413f40b00a5edea3cfec4e4832353e3857f658e327c"
     },
     "tools/engine.py": {
       "size": 30748,
       "sha256": "489e55cec7f5d3443a65df8c06cb6a076912abcb9af33a8928cd3df587dcb6b6"
     },
     "tools/governance.py": {
-      "size": 32812,
-      "sha256": "4c0fe9f8fe0886fce750328810e5db6e0cd3e2921dd0caca9bbc4fa153fad4c4"
+      "size": 35139,
+      "sha256": "7e9958ba355e8625f0eb94fd8fe1e38b46b23c7f25f927282ca584a83f7e85a6"
     },
     "tools/json_input.py": {
       "size": 450,
@@ -214,8 +214,8 @@
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 35309,
-      "sha256": "da163b8799148c538ea69f162f1bac8f3d3b97c7bcade70a519c51fbeccb7dbe"
+      "size": 37124,
+      "sha256": "36e907c1ca6a1fd0b8f184ba9aea3cfb9b65404b30ad2606613e088e1f047d37"
     },
     "web-public/check-sandbox.mjs": {
       "size": 17901,
@@ -234,8 +234,8 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "web-public/index.html": {
-      "size": 15991,
-      "sha256": "d516f415b81b775f4caff024abfd26c2e4bad73e97d5ee66664d139e81f767fe"
+      "size": 15983,
+      "sha256": "d9ffb639a9bc1406e69d24b234a7a32b8e3698a4da7c73a87a714fdb31b9ef6c"
     },
     "web-public/lab-ui.js": {
       "size": 7749,
@@ -246,8 +246,8 @@
       "sha256": "503631e8bd53003fb8c7832e178c9536396930ca7e408aacf654eac9e15af37b"
     },
     "web-public/native-ui.js": {
-      "size": 54971,
-      "sha256": "9ea2161dd371df64af323c187b4f98bd27ce2879e1885c45190fdeae04495f02"
+      "size": 57209,
+      "sha256": "f81ea5cb8f66d744f732c4995af742b75602cbd5121e57c2e7f16fcb14e1a77d"
     },
     "web-public/package-lock.json": {
       "size": 14868,
@@ -286,8 +286,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "web-public/style.css": {
-      "size": 33670,
-      "sha256": "acc0d2f1d63a47892f0315a622bba5aa22e792284253b42883536d744ee7ddbe"
+      "size": 36064,
+      "sha256": "25609152f171a13450d88cecbe42a9c6af76c52bb81f810f2fb1d9f7a23eaf88"
     }
   }
 }

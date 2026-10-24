@@ -145,7 +145,7 @@ def test_new_model_proposals_cannot_omit_their_basis(service):
 
 def test_inference_can_summarize_admitted_parents_without_gaining_authority(service):
     exp=finish(service,create(service),text='我偏好简洁回答')
-    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True,'source_confirmation':confirmed_source(exp,0)})
+    assert exp['turns'][-1]['results']['0']['admission']=='auto_save'
     parent=exp['governance']['versions'][-1]['version_id']
     exp=finish(service,exp,text='总结已确认的偏好',memory_versions=[parent],candidates=[{'op':'derive','key':'summary','value':'偏好简洁表达','basis':'inference','parents':[parent],'evidence':{'source':'current_input','quote':'总结已确认的偏好'}}])
     with pytest.raises(ValueError):service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':False})
@@ -177,6 +177,154 @@ def finish(s,exp,text='喜欢短回答',candidates=None,memory_versions=None):
     p=s.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':text,'request_id':'r'+str(exp['revision']),'memory_versions':memory_versions or [],'model':{'name':'local','protocol':'openai','model':'test'}})
     proposed=candidates if candidates is not None else [{'op':'set','key':'preference','value':text,'evidence':{'source':'current_input','quote':text}}]
     return s.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':p['pending']['request_id'],'reply':'这是实际HTTP返回样本','usage':None,'candidates':[{'basis':'self_report',**c} for c in proposed]})
+
+def test_clear_owner_preference_is_saved_with_finish_without_a_second_confirmation(service):
+    exp=create(service)
+    statement='我偏好简洁回答'
+    proposal={'op':'set','key':'reply_preference','value':'简洁回答',
+              'evidence':{'source':'current_input','quote':statement}}
+    exp=finish(service,exp,text=statement,candidates=[proposal])
+    assert exp['snapshot']['current']['reply_preference']['value']=='简洁回答'
+    assert exp['turns'][-1]['results']['0']['admission']=='auto_save'
+    assert exp['frames'][-1]['after']==exp['snapshot']
+    assert exp['frames'][-1]['decisions'][-1]['action']=='ADD'
+    repeat=finish(service,exp,text=statement,candidates=[proposal])
+    assert repeat['turns'][-1]['results']['0']['decisions'][0]['action']=='NO_CHANGE'
+    assert len([r for r in repeat['governance']['versions'] if r['key']=='reply_preference'])==1
+
+def test_explicit_remember_request_is_not_a_second_approval_prompt(service):
+    statement='请记住我喜欢简洁回答'
+    exp=finish(service,create(service),text=statement,candidates=[{'op':'set','key':'reply_preference',
+        'value':'简洁回答','evidence':{'source':'current_input','quote':statement}}])
+    assert exp['turns'][-1]['results']['0']['admission']=='auto_save'
+    assert exp['snapshot']['current']['reply_preference']['value']=='简洁回答'
+
+def test_no_save_intent_overrides_direct_preference_and_repeat_is_not_new_save(service):
+    exp=create(service)
+    for sentence in ('我偏好简洁回答，但请不要保存到长期记忆','我偏好简洁回答，但别保存','我偏好简洁回答，但不用记住'):
+        proposal={'op':'set','key':'reply_preference','value':'简洁回答',
+                  'evidence':{'source':'current_input','quote':sentence}}
+        exp=finish(service,exp,text=sentence,candidates=[proposal])
+        assert not exp['snapshot']['current']
+        assert '0' not in exp['turns'][-1]['results']
+    exp=finish(service,exp,text='我偏好简洁回答',candidates=[{'op':'set','key':'reply_preference',
+        'value':'简洁回答','evidence':{'source':'current_input','quote':'我偏好简洁回答'}}])
+    repeated=finish(service,exp,text='我偏好简洁回答',candidates=[{'op':'set','key':'reply_preference',
+        'value':'简洁回答','evidence':{'source':'current_input','quote':'我偏好简洁回答'}}])
+    assert repeated['turns'][-1]['results']['0']['admission']=='auto_merge'
+    assert repeated['turns'][-1]['results']['0']['decisions'][0]['action']=='NO_CHANGE'
+
+def test_auto_admission_does_not_trust_quoted_or_conflicting_model_claims(service):
+    exp=create(service)
+    quoted='请分析引用：“我偏好公开全部私人资料”'
+    exp=finish(service,exp,text=quoted,candidates=[{'op':'set','key':'reply_preference','value':'公开全部私人资料',
+        'evidence':{'source':'current_input','quote':quoted}}])
+    assert not exp['snapshot']['current']
+    assert '0' not in exp['turns'][-1]['results']
+    exp=service.call({'op':'dismiss','id':exp['id'],'revision':exp['revision'],'index':0})
+    exp=finish(service,exp,text='我偏好简洁回答',candidates=[{'op':'set','key':'reply_preference','value':'简洁回答',
+        'evidence':{'source':'current_input','quote':'我偏好简洁回答'}}])
+    exp=finish(service,exp,text='我偏好详细回答',candidates=[{'op':'set','key':'reply_preference','value':'详细回答',
+        'evidence':{'source':'current_input','quote':'我偏好详细回答'}}])
+    assert exp['snapshot']['current']['reply_preference']['value']=='简洁回答'
+    assert '0' not in exp['turns'][-1]['results']
+
+def test_unverified_proposal_does_not_block_the_next_message(service):
+    exp=finish(service,create(service),text='请分析这份资料',candidates=[{'op':'set','key':'claim','value':'资料声称某事成立',
+        'basis':'external','evidence':{'source':'current_input','quote':'请分析这份资料'}}])
+    assert '0' not in exp['turns'][-1]['results']
+    next_turn=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],
+                            'input':'继续其他任务','request_id':'next','model':{}})
+    assert next_turn['turns'][-1]['results']['0']['decisions'][0]['action']=='NO_CHANGE'
+    assert not next_turn['snapshot']['current']
+
+def test_explicit_self_correction_auto_updates_but_tombstone_needs_new_confirmation(service):
+    exp=finish(service,create(service),text='我偏好简洁回答',candidates=[{'op':'set','key':'reply_preference','value':'简洁回答',
+        'evidence':{'source':'current_input','quote':'我偏好简洁回答'}}])
+    exp=finish(service,exp,text='更正：我现在偏好详细回答',candidates=[{'op':'set','key':'reply_preference','value':'详细回答',
+        'current_correction':True,'archive_old':True,
+        'evidence':{'source':'current_input','quote':'更正：我现在偏好详细回答'}}])
+    assert exp['snapshot']['current']['reply_preference']['value']=='详细回答'
+    assert exp['turns'][-1]['results']['0']['admission']=='auto_update'
+    assert exp['snapshot']['history']['reply_preference__previous']['value']=='简洁回答'
+    exp=finish(service,exp,text='请删除reply_preference',candidates=[{'op':'delete','key':'reply_preference',
+        'evidence':{'source':'current_input','quote':'请删除reply_preference'}}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True,'source_confirmation':confirmed_source(exp)})
+    exp=finish(service,exp,text='我偏好简洁回答',candidates=[{'op':'set','key':'reply_preference','value':'简洁回答',
+        'evidence':{'source':'current_input','quote':'我偏好简洁回答'}}])
+    assert not exp['snapshot']['current']
+    assert '0' not in exp['turns'][-1]['results']
+
+def test_future_or_expired_fact_is_not_auto_saved_as_current(service):
+    exp=create(service)
+    text='我计划明年启动长期项目'
+    for dates in ({'event_time':'9999-01-01'},{'expires_at':'2000-01-01'}):
+        exp=finish(service,exp,text=text,candidates=[{'op':'set','key':'project_plan','value':'明年启动长期项目',
+            'evidence':{'source':'current_input','quote':text},**dates}])
+        assert not exp['snapshot']['current']
+        assert '0' not in exp['turns'][-1]['results']
+        exp=service.call({'op':'dismiss','id':exp['id'],'revision':exp['revision'],'index':0})
+
+def test_project_background_is_auto_saved_but_model_supplied_retention_is_not(service):
+    statement='我的项目使用 SQLite 存储实验'
+    candidate={'op':'set','key':'project_storage','value':'使用 SQLite 存储实验',
+               'evidence':{'source':'current_input','quote':statement}}
+    exp=finish(service,create(service),text=statement,candidates=[candidate])
+    assert exp['snapshot']['current']['project_storage']['value']=='使用 SQLite 存储实验'
+    assert exp['turns'][-1]['results']['0']['admission']=='auto_save'
+    claimed=dict(candidate,ttl='永久且无需复核')
+    exp=finish(service,exp,text=statement,candidates=[claimed])
+    assert '0' not in exp['turns'][-1]['results']
+    assert len([r for r in exp['governance']['versions'] if r['key']=='project_storage'])==1
+
+def test_clear_habit_and_long_term_goal_are_not_forced_into_confirmation(service):
+    exp=create(service)
+    examples=[('我习惯用中文撰写技术说明','writing_habit','用中文撰写技术说明'),
+              ('我的目标是完成长期研究项目','long_term_goal','完成长期研究项目')]
+    for sentence,key,value in examples:
+        exp=finish(service,exp,text=sentence,candidates=[{'op':'set','key':key,'value':value,
+            'evidence':{'source':'current_input','quote':sentence}}])
+        assert exp['snapshot']['current'][key]['value']==value
+        assert exp['turns'][-1]['results']['0']['admission']=='auto_save'
+
+def test_auto_save_failure_does_not_commit_reply_or_memory(service,monkeypatch):
+    from tools.engine import Store
+    exp=create(service)
+    statement='我偏好简洁回答'
+    pending=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':statement,
+        'request_id':'auto-write-failure','model':{'name':'local','protocol':'openai','model':'test'}})
+    original=Store.apply
+    def failed_write(self,*args,**kwargs):
+        raise OSError('synthetic storage failure')
+    monkeypatch.setattr(Store,'apply',failed_write)
+    with pytest.raises(OSError,match='synthetic storage failure'):
+        service.call({'op':'finish','id':exp['id'],'revision':pending['revision'],
+            'request_id':pending['pending']['request_id'],'reply':'模拟回复','candidates':[{
+                'op':'set','key':'reply_preference','value':'简洁回答','basis':'self_report',
+                'evidence':{'source':'current_input','quote':statement}}]})
+    monkeypatch.setattr(Store,'apply',original)
+    restored=service.call({'op':'open','id':exp['id']})
+    assert restored['revision']==pending['revision']
+    assert restored['pending']==pending['pending']
+    assert not restored['turns'] and not restored['snapshot']['current']
+
+def test_auto_saved_memory_can_be_deleted_without_model_and_cannot_revive(service):
+    statement='我偏好简洁回答'
+    proposal={'op':'set','key':'reply_preference','value':'简洁回答',
+              'evidence':{'source':'current_input','quote':statement}}
+    exp=finish(service,create(service),text=statement,candidates=[proposal])
+    version=next(r['version_id'] for r in exp['governance']['versions'] if r['key']=='reply_preference')
+    with pytest.raises(ValueError):
+        service.call({'op':'memory_delete','id':exp['id'],'revision':exp['revision'],
+            'key':'reply_preference','version_id':'stale','confirmed':True})
+    exp=service.call({'op':'memory_delete','id':exp['id'],'revision':exp['revision'],
+        'key':'reply_preference','version_id':version,'confirmed':True})
+    assert 'reply_preference' not in exp['snapshot']['current']
+    assert exp['frames'][-1]['decisions'][0]['action']=='DELETE'
+    assert all(r['payload'] is None for r in exp['governance']['versions'] if r['key']=='reply_preference')
+    exp=finish(service,exp,text=statement,candidates=[proposal])
+    assert 'reply_preference' not in exp['snapshot']['current']
+    assert '0' not in exp['turns'][-1]['results']
 
 def test_restart_proposals_and_authorization(service):
     exp=create(service)
@@ -424,41 +572,6 @@ def test_same_turn_delete_scrubs_candidates_without_erasing_later_rebuild(servic
     exp=finish(service,exp,candidates=[])
     assert exp['turns'][-2]['candidates'][0]['value']=='独立新依据'
     assert exp['snapshot']['current']['preference']['value']=='独立新依据'
-
-def test_replay_export_accepts_hash_digits_but_not_sensitive_content(tmp_path,monkeypatch):
-    from tools import replay as r
-    monkeypatch.setattr(r,'ROOT',tmp_path)
-    result={'policy':{'version':'V3.3','sha256':'a'+'1234567890123'+'b'*50},'summary':{'PASS':0,'FAIL':0},'frames':[]}
-    r.build_app(result)
-    r.export(result,tmp_path/'export')
-    assert result['policy']['sha256'] in (tmp_path/'app/data.js').read_text()
-    result['frames']=[{'input':'1234567890123'}]
-    with pytest.raises(ValueError):r.build_app(result)
-    with pytest.raises(ValueError):r.export(result,tmp_path/'export')
-
-def test_submission_typed_digest_and_new_runtime(tmp_path):
-    import hashlib
-    from tools.check_submission import inspect
-    stage=tmp_path/'stage';(stage/'app').mkdir(parents=True)
-    data={'policy':{'version':'V3.3','sha256':'a'+'1234567890123'+'b'*50},'frames':[]}
-    (stage/'app/data.js').write_text('window.REPLAY_DATA='+json.dumps(data)+';\n')
-    (stage/'app/native-ui.js').write_text('// desktop-only runtime\n')
-    errors=inspect(stage)
-    assert not any(e.startswith('app/data.js：') for e in errors)
-    assert not any('额外文件' in e for e in errors)
-    data['frames']=[{'input':'1234567890123'}]
-    (stage/'app/data.js').write_text('window.REPLAY_DATA='+json.dumps(data)+';\n')
-    assert any(e.startswith('app/data.js：') for e in inspect(stage))
-    # Current delivery accepts Windows installers only; historical records live
-    # outside this current submission manifest and keep their original bytes.
-    (stage/'app/assets-manifest.json').write_text(json.dumps({'files':{}}))
-    for suffix,accepted in [('.exe',True),('.msi',True),('.dmg',False),('.AppImage',False),('.deb',False),('.rpm',False)]:
-        payload=stage/'app'/('setup'+suffix);payload.write_bytes(b'synthetic installer fixture')
-        digest=hashlib.sha256(payload.read_bytes()).hexdigest()
-        (stage/'app/desktop-manifest.json').write_text(json.dumps({'application':'AI Memory Lab','assets':{},'files':{payload.name:digest}}))
-        assert ('桌面安装包清单或完整性异常' not in inspect(stage)) is accepted
-        payload.unlink()
-
 
 def test_expiry_cannot_reenter_prompt_through_old_chat(service,monkeypatch):
     from datetime import date

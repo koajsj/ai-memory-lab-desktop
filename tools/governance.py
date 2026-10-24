@@ -1,7 +1,7 @@
 """SQLite治理扩展：版本/来源/派生/准入，与现有四区投影同事务。"""
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 import re
@@ -39,6 +39,33 @@ class Evidence:
     conversation_id:str='local'
 
 class Governance:
+    def automatic_admission(self,ctx,candidate,utterance):
+        """Conservative direct-statement gate; model labels and matched quotes alone are not authority."""
+        from .engine import personal_kind,unsafe_fact
+        if candidate.get('op')!='set' or candidate.get('basis')!='self_report':return 'manual'
+        if set(candidate)-{'op','key','value','basis','evidence','state','privacy','kind','current_correction','archive_old'}:return 'manual'
+        if candidate.get('state','current')!='current' or candidate.get('privacy','private')!='private':return 'manual'
+        if candidate.get('reactivate') or candidate.get('kind')=='reminder':return 'manual'
+        today=date.today().isoformat()
+        if candidate.get('event_time','0001-01-01')>today or candidate.get('expires_at','9999-12-31')<=today:return 'manual'
+        if unsafe_fact(candidate) or personal_kind(candidate):return 'manual'
+        proof=candidate.get('evidence',{})
+        if (not isinstance(proof,dict) or proof.get('source')!='current_input'
+                or proof.get('quote')!=utterance.strip() or len(utterance)>300
+                or candidate.get('value','') not in utterance
+                or re.search(r'[“”"\'「」?？;；\n]|(?:不要|别|无需|不用)(?:记住|记|保存|存入|写入)|忘记|删除',utterance)):
+            return 'manual'
+        direct=re.fullmatch(r'(?:更正[:：]\s*)?(?:请记住)?(?:我(?:偏好|喜欢|习惯|计划|决定|是|的项目|的目标|的长期|正在开发|现在偏好|现在喜欢)|请以后|以后请|今后请|从现在起请).+',utterance.strip())
+        if not direct:return 'manual'
+        if not self.allowed(ctx,ctx.role,'write'):return 'manual'
+        if self.db.execute('SELECT 1 FROM tombstones WHERE role=? AND key=?',(ctx.role,candidate['key'])).fetchone():return 'manual'
+        current=self.read(ctx,ctx.role)
+        old=current['current'].get(candidate['key']) or current['completed'].get(candidate['key'])
+        if old and old['value']!=candidate['value']:
+            if not candidate.get('current_correction') or not re.search(r'更正|改为|以后|从现在起|现在偏好|现在喜欢',utterance):return 'manual'
+        if old and old['value']==candidate['value']:return 'auto_merge'
+        return 'auto_update' if old else 'auto_save'
+
     def _now(self):
         value=self._clock()
         at=datetime.fromisoformat(value.replace('Z','+00:00'))

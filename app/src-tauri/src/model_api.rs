@@ -19,7 +19,7 @@ fn contains_credential(text: &str) -> bool {
             || (["ghp_", "github_pat_", "xoxb-", "xoxp-", "aiza", "akia"]
                 .iter().any(|p| token.starts_with(p)) && token.len() >= 20)
             || (token.starts_with("eyj") && token.split('.').filter(|s| s.len() >= 8).count() == 3)
-            || (i > 0 && words[i - 1] == "bearer" && token.len() >= 12)
+            || (i > 0 && matches!(words[i - 1], "bearer" | "basic") && token.len() >= 12)
             || (["password=", "api_key=", "access_token=", "client_secret="]
                 .iter().any(|p| token.starts_with(p) && token.len() > p.len() + 3))
     })
@@ -68,7 +68,7 @@ mod tests {
         let secret=format!("sk-{}", "SyntheticOnly".repeat(3));
         assert!(request(&p("openai"),"k","rules",&[Message{role:"user".into(),content:secret.clone()}],true).is_err());
         assert!(validate_text("an opaque locally configured credential", "opaque locally configured credential").is_err());
-        for value in [&secret, "Bearer syntheticCredentialOnly123456", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljU2lnbmF0dXJl", "-----BEGIN PRIVATE KEY-----"] {
+        for value in [&secret, "Bearer syntheticCredentialOnly123456", "Basic c3ludGhldGljOm5vdC1hLXJlYWwta2V5", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljU2lnbmF0dXJl", "-----BEGIN PRIVATE KEY-----"] {
             let mut d=Decoder::default();let mut emitted=String::new();let mut rejected=false;
             for part in value.as_bytes().chunks(2) {
                 let v=json!({"choices":[{"delta":{"content":std::str::from_utf8(part).unwrap()}}]});
@@ -153,6 +153,20 @@ mod tests {
         )
         .unwrap();
         assert!(d.usage.is_none());
+    }
+    #[test]
+    fn unfinished_tool_requests_are_not_completed_answers() {
+        for (protocol, body) in [
+            ("openai", json!({"choices":[{"message":{"content":"需要调用工具", "tool_calls":[{"id":"call","type":"function"}]},"finish_reason":"tool_calls"}]})),
+            ("anthropic", json!({"content":[{"type":"text","text":"需要调用工具"},{"type":"tool_use","id":"call"}],"stop_reason":"tool_use"})),
+            ("anthropic", json!({"content":[{"type":"text","text":"尚未结束"}],"stop_reason":"pause_turn"})),
+        ] {
+            assert!(Decoder::default().accept(protocol, &body, false).is_err(), "unfinished response must not become a saved answer");
+        }
+        let mut d = Decoder::default();
+        assert_eq!(d.accept("anthropic", &json!({"type":"content_block_start","content_block":{"type":"text","text":"开头"}}), true).unwrap(), "开头");
+        d.accept("anthropic", &json!({"type":"content_block_delta","delta":{"type":"text_delta","text":"后续"}}), true).unwrap();
+        assert_eq!(d.text, "开头后续");
     }
     #[tokio::test]
     async fn real_http_mock_streaming_cancel_and_truncation() {
@@ -317,7 +331,7 @@ impl Decoder {
                         .unwrap_or("")
                         .into();
                     if let Some(reason) = c["finish_reason"].as_str() {
-                        if !matches!(reason, "stop" | "tool_calls") {
+                        if reason != "stop" {
                             return Err("模型输出被截断或过滤，请缩短输入后重试".into());
                         }
                         self.done = true;
@@ -329,7 +343,14 @@ impl Decoder {
             }
             "anthropic" => {
                 if stream {
-                    piece = v["delta"]["text"].as_str().unwrap_or("").into();
+                    piece = if v["type"] == "content_block_start" {
+                        v["content_block"]["text"].as_str()
+                    } else {
+                        v["delta"]["text"].as_str()
+                    }.unwrap_or("").into();
+                    if v["content_block"]["type"] == "tool_use" {
+                        return Err("当前应用不执行模型工具请求；未提交完整回答".into());
+                    }
                     self.done |= v["type"] == "message_stop";
                 } else {
                     piece = v["content"]
@@ -347,8 +368,10 @@ impl Decoder {
                 } else {
                     &v["stop_reason"]
                 };
-                if stop == "max_tokens" {
-                    return Err("模型输出超过长度限制".into());
+                if let Some(reason) = stop.as_str() {
+                    if !matches!(reason, "end_turn" | "stop_sequence") {
+                        return Err("模型输出未正常结束或需要未支持的工具；未提交完整回答".into());
+                    }
                 }
                 count(
                     "input",

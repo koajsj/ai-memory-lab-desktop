@@ -119,16 +119,20 @@ try{
  assert.equal(requests,0,'help must never call a model');assert.equal(service({op:'list'}).length,0,'help must not create experiments');
  e('name').value='最小DOM实验';await e('new').click();assert.equal(service({op:'list'}).length,1);
  assert.equal(e('setup').hidden,true);assert.equal(e('workspace').hidden,false);
+ assert.equal(e('context-panel').hidden,true,'empty experiment has no context selection');
+ await e('evolution-view').click();assert.equal(e('send-options').hidden,true,'reading mode must not reserve composer settings');
+ await e('chat-view').click();assert.equal(e('send-options').hidden,false);
+ assert(e('script-grid'),'official script needs a complete round directory');
  e('provider').value='Mock';e('protocol').value='openai';e('base').value='http://localhost/v1';e('model').value='test';e('key').value='TEMP_KEY';await e('profile-save').click();assert.equal(e('key').value,'');
  e('model').value='edited-model';await e('profile-save').click();assert.equal(savedProfileKey,null,'editing metadata with blank key must preserve the existing credential');
- e('input').value='请记住我喜欢简洁回答';e('stream').checked=true;
+ e('input').value='请按我喜欢的简洁风格答复';e('stream').checked=true;
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
  const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 0 项 · 待处理 1 项'),'the round summary must separate proposals from saved decisions');
  assert.deepEqual(exp.turns[0].assessment,assessment);
  const riskPanel=e('conversation').children.find(x=>x.children?.some(c=>c.textContent==='模型风险观察 · 未经独立核实'));
  assert(riskPanel?.open);assert(riskPanel.children.some(c=>c.textContent===assessment.reason));
- const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='确认这是本人直接陈述或本人意图');assert(confirm);assert(candidate.children.some(n=>n.textContent==='请记住我喜欢简洁回答'),'show the actual source quotation');assert(candidate.children.some(n=>n.textContent?.includes('模型分类：本人陈述')));loseDecideReply=true;await confirm.click();
+ const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='确认这是本人直接陈述或本人意图');assert(confirm);assert(candidate.children.some(n=>n.textContent==='请按我喜欢的简洁风格答复'),'show the actual source quotation');assert(candidate.children.some(n=>n.textContent?.includes('模型分类：本人陈述')));loseDecideReply=true;await confirm.click();
  assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
  assert.equal(e('context').children.length,1);assert.equal(e('context').selectedOptions.length,0,'model context must be opt-in');
@@ -143,6 +147,8 @@ try{
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 1 项 · 待处理 0 项'),'saved governance decisions must update the visible round summary');
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
  await e('memories').children[0].click();assert(e('details').children.length>0);
+ assert(e('details').children.some(n=>n.textContent==='更正记忆'));
+ assert(e('details').children.some(n=>n.textContent==='删除记忆'));
  // A current fact and isolated candidate of the same field must select different versions.
  e('input').value='也许我需要详细回答';await e('composer').onsubmit({preventDefault(){}});
  assert.equal(lastPrepared.pending.admission.memories.length,1,'send the explicitly selected version through core admission');
@@ -304,6 +310,20 @@ try{
  assert.equal(service({op:'open',id:privateExp.id}).turns.length,roundsBeforeTemporary);
  assert(!JSON.stringify(service({op:'export',id:privateExp.id,sections:['turns','memory']})).includes('过敏性鼻炎'));
  assert(e('status').textContent.includes('没有提取候选或保存实验'));assert.equal(e('input').value,'');
+ const autoExp=service({op:'create',name:'自动记忆界面回归',rules:'清晰的本人长期偏好可自动保存'});
+ e('experiments').value=autoExp.id;await e('experiments').onchange();
+ e('input').value='我偏好详细回答';await e('composer').onsubmit({preventDefault(){}});
+ const automaticallySaved=service({op:'open',id:autoExp.id});
+ assert.equal(automaticallySaved.snapshot.current.preference.value,'详细回答');
+ assert.equal(automaticallySaved.turns[0].results['0'].admission,'auto_save');
+ assert(e('status').textContent.includes('内核自动处理 1 项'));
+ assert(!e('conversation').children.find(x=>x.className==='native-candidate').children.some(x=>x.textContent==='确认这是本人直接陈述或本人意图'));
+ await e('memories').children[0].click();await e('details').children.find(n=>n.textContent==='删除记忆').click();
+ const afterLocalDelete=service({op:'open',id:autoExp.id});
+ assert.equal(afterLocalDelete.snapshot.current.preference,undefined);
+ assert(!JSON.stringify(service({op:'export',id:autoExp.id,sections:['memory']})).includes('详细回答'));
+ assert.equal(afterLocalDelete.turns[0].candidates[0].erased,true);
+ assert.equal(afterLocalDelete.turns[0].input,'我偏好详细回答','删除记忆不冒充删除原始聊天');
  e('input').value='我的健康自述仅在输入框';windowEvents.pagehide();
  assert.equal(e('input').value,'');assert.equal(e('live').children.length,0);assert.equal(e('live').hidden,true);
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;

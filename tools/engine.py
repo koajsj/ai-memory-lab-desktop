@@ -47,6 +47,7 @@ def sensitive(value):
     # business numbers as phones. Explicit labels carry contact semantics.
     numeric=re.sub(r'\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b','',text,flags=re.I)
     return credentials(text) or bool(re.search(
+        r'(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|'
         r'(?<![A-Za-z0-9])(?:\d[\s-]*){13,19}[xX]?(?![A-Za-z0-9])|'
         r'(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}|'
         r'(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)'

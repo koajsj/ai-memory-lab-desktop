@@ -125,6 +125,13 @@ try{
  assert(pendingNode,'the unconfirmed proposal must have a pending node');
  await e('memories').children.find(b=>b.textContent.includes('待核实')).click();
  assert.equal(graphInstance.selected,pendingNode.id,'select the candidate version, not the same-key current fact');
+ e('filter').value='pending';e('filter').onchange();
+ assert.equal(e('memories').children.length,1,'graph filter must apply to the graph workspace');
+ await e('evolution-view').click();
+ assert.equal(e('memories').children.length,2,'a hidden graph filter must not remove current facts from the evolution snapshot');
+ await e('chat-view').click();assert.equal(e('memories').children.length,2);
+ await e('graph-view').click();assert.equal(e('filter').value,'pending');assert.equal(e('memories').children.length,1);
+ e('filter').value='all';e('filter').onchange();
  e('rules').value='下一实验的新守则草稿';e('name').value='新的名称草稿';e('position').oninput();assert.equal(e('name').value,'新的名称草稿','view refresh must not discard an experiment-name draft');assert.equal(e('rules').value,'下一实验的新守则草稿','view refresh must not discard an unsaved rules draft');
 
  let historical=service({op:'open',id:rows[0].id});
@@ -232,6 +239,16 @@ try{
  assert.equal(e('context').selectedOptions.length,2,'retain only after explicit opt-in');
  e('experiments').value=clue.id;await e('experiments').onchange();
  assert.equal(e('context-keep').checked,false);assert.equal(e('context').selectedOptions.length,0);
+ let unsafeDerived=service({op:'open',id:selectedContext.id});
+ for(let index=0;index<unsafeDerived.turns.at(-1).candidates.length;index++)unsafeDerived=service({op:'dismiss',id:unsafeDerived.id,revision:unsafeDerived.revision,index});
+ const parent=unsafeDerived.governance.versions.find(v=>v.key==='format').version_id;
+ unsafeDerived=service({op:'prepare',id:unsafeDerived.id,revision:unsafeDerived.revision,input:'检查模型的恢复建议，尚未授权恢复',request_id:'unsafe-derived',model:{},memory_versions:[parent]});
+ unsafeDerived=service({op:'finish',id:unsafeDerived.id,revision:unsafeDerived.revision,request_id:'unsafe-derived',reply:'模型建议不等于恢复授权',candidates:[{op:'derive',key:'derived_summary',value:'结论摘要',basis:'inference',parents:[parent],reactivate:true,evidence:{source:'memory',version_id:parent,quote:'先列结论'}}]});
+ e('experiments').value=unsafeDerived.id;await e('experiments').onchange();
+ const unauthorized=e('conversation').children.find(x=>x.className==='native-candidate');
+ assert(!unauthorized.children.some(c=>c.textContent==='确认派生并交由内核裁决'),'a derived proposal must not offer authority to restore deleted content');
+ await unauthorized.children.find(c=>c.textContent==='核验操作依据').click();
+ assert.equal(service({op:'open',id:unsafeDerived.id}).turns.at(-1).results['0'].decisions[0].action,'REJECT');
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

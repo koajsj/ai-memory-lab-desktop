@@ -352,7 +352,10 @@ class Service:
                         source_confirmation=expected
                     # An explicitly confirmed derivation still has to pass the
                     # core's parent admission checks; it is not a new root fact.
-                    untrusted=basis in ('external','inference') and not (candidate['op']=='derive' and basis=='inference')
+                    untrusted=basis in ('external','inference') and not (
+                        candidate['op']=='derive' and basis=='inference'
+                        and not candidate.get('current_correction') and not candidate.get('reactivate')
+                        and candidate.get('state')!='completed')
                     if not untrusted and (candidate['op']!='set' or candidate.get('current_correction') or candidate.get('reactivate') or candidate.get('state')=='completed'):
                         if not confirmed:raise ValueError('修改、派生、删除与任务完成需要本人明确确认')
                     admitted_before={r['version_id'] for r in store.retrieve_for_context(ctx,ctx.role,today=date.today().isoformat())['memories']}

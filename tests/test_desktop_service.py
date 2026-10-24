@@ -153,6 +153,22 @@ def test_inference_can_summarize_admitted_parents_without_gaining_authority(serv
     assert exp['snapshot']['current']['summary']['value']=='偏好简洁表达'
     assert exp['governance']['versions'][-1]['parents']==[parent]
 
+    exp=finish(service,exp,text='请删除摘要',candidates=[{'op':'delete','key':'summary','basis':'self_report','evidence':{'source':'current_input','quote':'请删除摘要'}}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True,'source_confirmation':confirmed_source(exp)})
+    for key,conditions in (('summary',{'reactivate':True}),('other_summary',{'current_correction':True}),('closed_summary',{'state':'completed'})):
+        proposal={'op':'derive','key':key,'value':'偏好简洁表达','basis':'inference','parents':[parent],
+                  'evidence':{'source':'memory','version_id':parent,'quote':'我偏好简洁回答'},**conditions}
+        exp=finish(service,exp,text='只检查现有根依据，不是新的本人陈述',memory_versions=[parent],candidates=[proposal])
+        before=exp['snapshot']
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+        assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
+        assert exp['snapshot']==before
+    restored=Service(service.root)
+    try:
+        assert restored.call({'op':'open','id':exp['id']})['snapshot']==before
+        assert 'summary' not in restored.call({'op':'export','id':exp['id'],'sections':['memory']})['snapshot']['current']
+    finally:restored.db.close()
+
 def confirmed_source(exp,index=0):
     # Explicit test-side owner action; never invent or backfill a model's evidence.
     return dict(round=len(exp['turns']),index=index,evidence=exp['turns'][-1]['candidates'][index].get('evidence'),candidate=exp['turns'][-1]['candidates'][index])
@@ -611,6 +627,7 @@ def test_sensitive_aliases_and_credentials_never_reach_candidate_storage(service
         '验证码为 123456', 'Authorization: Basic c3ludGhldGljOm9ubHk=',
         'https://example.invalid/?access_token=synthetic-value',
         'phone: +1 (202) 555-0100', '手机号：138.0000.0000', '银行卡尾号：1234',
+        'Callback +1 (202) 555-0147', '联系用 +44 7700 900123',
     ]
     cases.extend(('note',value) for value in formats)
     for seq,(key,value) in enumerate(cases,1):

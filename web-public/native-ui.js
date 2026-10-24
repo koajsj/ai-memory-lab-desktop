@@ -153,7 +153,7 @@ function render(){
   else if(frameIndex===exp.turns.length-1){
    if(!['self_report','external','inference'].includes(c.basis)||!proof||checked?.status!=='verified'){
     row.append(text('p','此建议缺少可核验的来源记录，不能直接裁决。请忽略后明确重新提出。'),button('忽略',()=>mutate('dismiss',{index})));
-   }else if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference')){
+   }else if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference'&&!c.current_correction&&!c.reactivate&&c.state!=='completed')){
     row.append(text('p','外部主张或推断不能充当操作授权，也不因重复或确认按钮变成已核实事实。'),button(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed'?'保留为待核实线索':'核验操作依据',()=>mutate('decide',{index,confirm:false})),button('忽略',()=>mutate('dismiss',{index})));
    }else{
    if(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed')row.append(button('仅存入待核实区',()=>mutate('decide',{index,confirm:false})));
@@ -177,7 +177,7 @@ function render(){
  graphData(graphModel);busy(working);
 }
 function operationName(value){return ({set:'建议保存',derive:'建议派生',retire:'建议失效',delete:'建议删除',review:'建议复核',ADD:'新增',UPDATE:'更正',MERGE:'合并',REJECT:'拒绝',NO_CHANGE:'无写入',RETIRE:'退出当前状态',DELETE:'删除',PENDING:'隔离待核实'})[value]||value;}
-function currentModel(){if(!exp?.frames.length)return null;return root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:ui.filter.value||'all'});}
+function currentModel(){if(!exp?.frames.length)return null;return root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:view==='graph'?(ui.filter.value||'all'):'all'});}
 function details(key,p){const f=exp.frames[frameIndex],versions=f?.governance.versions.filter(r=>r.key===key.replace(/__previous$/,''))||[];ui.details.replaceChildren(text('h2',root.MemoryModel.label(key)),text('p',p.value),text('p','来源：'+(root.MemoryModel.sourceNames[p.source]||p.source||'未记录')));const advanced=doc.createElement('details');advanced.append(text('summary','来源、版本与派生记录'),text('pre',JSON.stringify(versions,null,2)));for(const r of versions){const at=exp.frames.findIndex(f=>f.governance.versions.some(v=>v.version_id===r.version_id));if(at>=0)advanced.append(button('查看版本首次登记轮次 '+(at+1),()=>{frameIndex=at;render();}));}ui.details.append(advanced);}
 function graphData(m=currentModel()){if(ui.graph.hidden||graph?.destroyed)return;if(!m){graph?.setData({nodes:[],edges:[],count:0},exp?.role||'LOCAL',{animate:false});graph?.select(null);ui.graphNote.textContent='尚无治理记录，二维记忆列表仍可使用。';return;}if(!graph){try{graph=new root.MemoryGraph.GraphView(ui.graph,{states:root.MemoryModel.states,onSelect:id=>{const n=currentModel()?.nodes.find(n=>n.id===id);if(n){selected=n.id;details(n.key,n.payload||{value:'原值已清除',source:'未记录'});graph?.select(id);}},onUnavailable:m=>{ui.graphNote.textContent=m;ui.fit.disabled=true;}});graph.configure({motion:!root.matchMedia('(prefers-reduced-motion: reduce)').matches,low:false});}catch{ui.graphNote.textContent='WebGL不可用，请使用记忆列表和时间轴。';return;}}
  ui.graphNote.textContent='';graph.setData(m,exp.role,{animate:false});graph.select(m.nodes.some(n=>n.id===selected)?selected:null);graph.resizeToHost();graph.request();}

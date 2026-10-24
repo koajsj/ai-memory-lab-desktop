@@ -89,7 +89,12 @@ function setView(next){
 function showGuide(step=0){guideStep=step;ui.guide.hidden=false;const [title,description,action]=guide[guideStep];ui.guideTitle.textContent=title;ui.guideDescription.textContent=description;ui.guideAction.textContent=action;ui.guideProgress.textContent=`${guideStep+1} / ${guide.length}`;ui.guideNext.textContent=guideStep===guide.length-1?'完成':'下一步';}
 function dismissGuide(){ui.guide.hidden=true;try{root.localStorage?.setItem('memory-lab.desktop-guide-seen','1');}catch{/* Optional help preference only; experiments stay in SQLite. */}}
 
-async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');exp=await call({op,id:exp.id,revision:exp.revision,...extra});frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
+async function recoverSaved(id,error){
+ try{exp=await call({op:'open',id});frameIndex=Math.max(0,exp.frames.length-1);render();}
+ catch(recovery){exp=null;selected=null;graph?.dispose();graph=null;render();throw Error(`${error}；保存状态无法核对：${recovery}。请重新打开实验。`);}
+ throw error;
+}
+async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');const id=exp.id;try{exp=await call({op,id,revision:exp.revision,...extra});}catch(error){await recoverSaved(id,error);}frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
 function render(){
  ui.title.textContent=view==='setup'?'开始实验':exp?.name||'尚未创建实验';
  ui.currentRules.hidden=!exp;ui.policyView.hidden=!exp;
@@ -207,11 +212,7 @@ function createDialog(){
   }catch(error){
    phase.textContent='AI 回复 · 未确认保存，请以已保存轮次为准';
    if(!streamed)preview.textContent='本轮未收到完整回复。';
-   // Recover the committed revision after any failed or uncertain write. Keep both
-   // errors if recovery also fails; never imply a failed read proves no commit.
-   try{exp=await call({op:'open',id:exp.id});frameIndex=Math.max(0,exp.frames.length-1);render();}
-   catch(recovery){phase.textContent='AI 回复 · 保存状态未确认';throw Error(`${error}；保存状态无法核对：${recovery}。请重新打开实验。`);}
-   throw error;
+   await recoverSaved(exp.id,error);
   }finally{running=null;ui.live.hidden=saved;}
  });};
  ui.input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ui.composer.requestSubmit();}};

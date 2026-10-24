@@ -29,13 +29,17 @@ const tmp=await mkdtemp(path.join(os.tmpdir(),'memory-windows-check-'));
 try{
   // Current implementation provenance is independent of an immutable demo evaluation.
   const project=path.join(tmp,'build-inputs');await mkdir(path.join(project,'app'),{recursive:true});await mkdir(path.join(project,'tools'));
-  const core=Buffer.from('current core'),data='fixed demo';
-  const evaluation=JSON.stringify({inputs:{'tools/governance.py':sha256(Buffer.from('historical core')),'app/data.js':sha256(Buffer.from(data))}});
+  const core=Buffer.from('current core'),rules=Buffer.from('current rules'),data='fixed demo';
+  const evaluation=JSON.stringify({inputs:{'memory-rules.md':sha256(Buffer.from('historical rules')),'tools/governance.py':sha256(Buffer.from('historical core')),'app/data.js':sha256(Buffer.from(data))}});
   await writeFile(path.join(project,'app/evaluation.json'),evaluation);
   await writeFile(path.join(project,'tools/governance.py'),core);
-  const sources={format:'memory-lab.private-source.v1',files:{'tools/governance.py':{sha256:sha256(core)}}};
+  await writeFile(path.join(project,'memory-rules.md'),rules);
+  const sources={format:'memory-lab.private-source.v1',files:{'memory-rules.md':{sha256:sha256(rules)},'tools/governance.py':{sha256:sha256(core)}}};
   const registry=path.join(project,'source-manifest.json');await writeFile(registry,JSON.stringify(sources));
   await verifyInputs(project,data);
+  await writeFile(path.join(project,'memory-rules.md'),'stale rules');
+  await assert.rejects(()=>verifyInputs(project,data),/memory-rules/);
+  await writeFile(path.join(project,'memory-rules.md'),rules);
   await assert.rejects(()=>verifyInputs(project,'changed demo'),/app\/data.js/);
   sources.files['tools/governance.py'].sha256='0'.repeat(64);await writeFile(registry,JSON.stringify(sources));
   await assert.rejects(()=>verifyInputs(project,data),/governance/);

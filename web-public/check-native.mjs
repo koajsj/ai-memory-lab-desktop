@@ -51,14 +51,14 @@ class El {
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
  async click(){if(this.onclick)await this.onclick();for(const f of this.events.click||[])await f();}
 }
-let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,imported=null;
+let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,loseDecideReply=false,imported=null;
 const preferences=new Map(),windowEvents={};let sampleData=null;
 const service=q=>JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
 const win={document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
- if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');return service(args.request);}
+ if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答'}]}),usage:null};}
  if(command==='cancel_model')return;
@@ -82,7 +82,8 @@ try{
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
  const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 0 项 · 待处理 1 项'),'the round summary must separate proposals from saved decisions');
- const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);await confirm.click();
+ const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);loseDecideReply=true;await confirm.click();
+ assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 1 项 · 待处理 0 项'),'saved governance decisions must update the visible round summary');
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
@@ -138,6 +139,9 @@ try{
  // The submit handler returns the guard so state/error checks need no timing guess.
  assert(e('status').textContent.includes('实验保存失败样本'),'recovery failure must not hide the original save error');
  assert(e('status').textContent.includes('实验重读失败样本'));
+ assert.equal(e('send').disabled,true,'an unknown saved revision must not remain actionable');
+ assert.equal(e('details').children.length,0,'failed recovery must not retain stale memory details');
+ assert.equal(e('memories').children.length,0,'failed recovery must not retain an unverified snapshot');
  failFinish=false;failOpen=false;
  e('name').value='失败后独立新实验';await e('new').click();
  assert.equal(e('live').hidden,true,'a new experiment must not display another experiment’s transient reply');

@@ -11,7 +11,7 @@ export async function verifyInputs(root,data){
  const current=JSON.parse(await readFile(path.join(root,'source-manifest.json'),'utf8'));
  if(current.format!=='memory-lab.private-source.v1')throw new Error('当前源码清单格式无效');
  for(const [file,historical]of Object.entries(evaluation.inputs)){
-  const digest=file.startsWith('tools/')?current.files[file]?.sha256:historical;
+  const digest=file==='memory-rules.md'||file.startsWith('tools/')?current.files[file]?.sha256:historical;
   const bytes=file==='app/data.js'?Buffer.from(data):await readFile(path.join(root,file));
   if(createHash('sha256').update(bytes).digest('hex')!==digest)throw new Error('构建输入登记不一致：'+file+'；请核对当前源码清单或历史演示来源。');
  }

@@ -202,7 +202,8 @@ class Service:
                     candidate=turn['candidates'][index].copy();confirmed=q.get('confirm') is True
                     if candidate['op']!='set' or candidate.get('current_correction') or candidate.get('reactivate') or candidate.get('state')=='completed':
                         if not confirmed:raise ValueError('修改、派生、删除与任务完成需要本人明确确认')
-                    before=store.read(ctx,ctx.role);seq=state['revision']+1
+                    admitted_before={r['version_id'] for r in store.retrieve_for_context(ctx,ctx.role,today=date.today().isoformat())['memories']}
+                    seq=state['revision']+1
                     try:
                         if candidate.pop('op')=='derive':
                             parents=candidate.pop('parents')
@@ -219,7 +220,10 @@ class Service:
                     before=state['frames'][-1]['before'];a,b=flat(after),flat(before)
                     frame=dict(round=len(state['frames']),source='owner',input=turn['input'],before=before,after=after,diff=dict(added=sorted(a.keys()-b.keys()),removed=sorted(b.keys()-a.keys()),changed=sorted(k for k in a.keys()&b.keys() if a[k]!=b[k])),decisions=result['decisions'],governance=governance)
                     frame['decisions']=([d for d in state['frames'][-1]['decisions'] if d['action']!='NO_CHANGE']+frame['decisions']);state['frames'][-1]=frame;turn['results'][str(index)]=result
-                    if any(d['action'] in ('UPDATE','RETIRE','DELETE') for d in result['decisions']):state['context_start']=len(state['turns'])
+                    admitted_after={r['version_id'] for r in store.retrieve_for_context(ctx,ctx.role,today=date.today().isoformat())['memories']}
+                    # A rejected conflict may revoke admission without changing the
+                    # snapshot. Old chat must not bypass that governance decision.
+                    if admitted_before-admitted_after or any(d['action'] in ('UPDATE','RETIRE','DELETE') for d in result['decisions']):state['context_start']=len(state['turns'])
                 elif op=='dismiss':
                     turn=state['turns'][-1];index=q.get('index')
                     if type(index) is not int or not 0<=index<len(turn['candidates']) or str(index) in turn['results']:raise ValueError('候选不存在或已处理')

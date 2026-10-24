@@ -230,6 +230,21 @@ def test_context_window_keeps_whole_turns_and_persisted_history(service):
     assert p['prompt']['messages'][0]['content']=='消息3'
     assert p['prompt']['messages'][-1]['content']=='继续'
 
+def test_conflict_cannot_bypass_admission_through_chat_history(service):
+    exp=finish(service,create(service),text='旧的设备配置陈述',candidates=[
+        {'op':'set','key':'configuration','value':'配置甲','event_time':'2000-01-01'},
+        {'op':'set','key':'independent_goal','value':'完成独立设计文档'}])
+    for i in range(2):
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':i,'confirm':True})
+    exp=finish(service,exp,text='相同生效时间但相互矛盾的新陈述',candidates=[
+        {'op':'set','key':'configuration','value':'配置乙','event_time':'2000-01-01'}])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'现在配置是什么','request_id':'after-conflict','model':{}})
+    assert {m['key'] for m in p['prompt']['allowed']}=={'independent_goal'}
+    assert p['prompt']['messages']==[{'role':'user','content':'现在配置是什么'}]
+    assert len(p['turns'])==2, 'trim model context, not the saved experiment evidence'
+
 def test_same_turn_delete_scrubs_candidates_without_erasing_later_rebuild(service):
     exp=finish(service,create(service),candidates=[{'op':'set','key':'preference','value':'应清除的候选原值'},{'op':'delete','key':'preference'}])
     exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})

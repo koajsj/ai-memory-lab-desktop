@@ -919,3 +919,35 @@ def test_personal_grant_is_not_a_model_field_or_ordinary_core_operation(service)
     review=service.call({'op':'privacy_review','id':exp['id'],'revision':exp['revision'],'plan':plan,'save_intent':True})
     exp=service.call({'op':'privacy_commit','id':exp['id'],'revision':review['revision'],'plan':plan,'token':review['privacy_token'],'request_id':review['privacy_request']['id'],'confirmed':True})
     assert exp['snapshot']['current']['personal_contact']['version']>payload['version']
+
+
+def test_admission_retains_core_denials_and_distinguishes_unselected(service):
+    exp=finish(service,create(service),text='整理公开资料；偏好先列要点',candidates=[
+        {'op':'set','key':'goal','value':'整理公开资料','basis':'self_report','event_time':'2099-01-01','evidence':{'source':'current_input','quote':'整理公开资料'}},
+        {'op':'set','key':'preference','value':'先列要点','basis':'self_report','evidence':{'source':'current_input','quote':'偏好先列要点'}},
+    ])
+    for index in range(2):
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':index,'confirm':True,'source_confirmation':confirmed_source(exp,index)})
+    vid=next(r['version_id'] for r in exp['governance']['versions'] if r['key']=='preference')
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'request_id':'no-context','input':'现在可确定什么？','include_history':False})
+    assert p['pending']['admission']['denied']==[{'reason':'future'}]
+    assert p['pending']['admission']['unselected']==[{'version_id':vid,'reason':'not_selected'}]
+    assert p['prompt']['allowed']==[] and p['prompt']['messages']==[{'role':'user','content':'现在可确定什么？'}]
+    assert p['pending']['history_rounds']==[] and p['pending']['history_omitted']==[{'round':1,'reason':'user_excluded'}]
+    exp=service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'no-context','reply':'模拟响应，无当前目标依据','candidates':[]})
+    reopened=Service(service.root)
+    try:
+        assert reopened.call({'op':'open','id':exp['id']})==exp
+        assert reopened.call({'op':'export','id':exp['id'],'sections':['turns']})['turns'][-1]['admission']==exp['turns'][-1]['admission']
+    finally:reopened.db.close()
+
+
+def test_history_opt_out_is_per_request_and_invalid_option_rolls_back(service):
+    exp=finish(service,create(service),text='这是一条普通分析消息',candidates=[])
+    for invalid in ('false',None,0):
+        with pytest.raises(ValueError,match='聊天上下文'):
+            service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'继续','request_id':'bad-option','include_history':invalid})
+        assert service.call({'op':'open','id':exp['id']})==exp
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'正常续聊','request_id':'normal'})
+    assert p['pending']['history_rounds']==[1] and p['pending']['include_history'] is True
+    assert p['prompt']['messages'][0]['content']=='这是一条普通分析消息'

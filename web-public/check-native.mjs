@@ -5,7 +5,7 @@ const require=createRequire(import.meta.url);globalThis.MemoryModel=require('./m
 const demo=require('./src/public-demo.json');
 const withHash=structuredClone(demo);withHash.data.policy.sha256='a'+'1234567890123'+'b'.repeat(50);if(withHash.policy)withHash.policy.sha256=withHash.data.policy.sha256;assert.equal(globalThis.MemoryModel.adapt(withHash).data.policy.sha256,withHash.data.policy.sha256);
 const secret=structuredClone(withHash);secret.data.frames[0].input='1234567890123';assert.throws(()=>globalThis.MemoryModel.adapt(secret),/敏感/);
-const {runner,extracted,ruleDraft}=require('./native-ui.js');
+const {runner,extracted,ruleDraft,scriptDraft,answerComparison}=require('./native-ui.js');
 if(existsSync(new URL('../tools/desktop_service.py',import.meta.url))){
  const builtinText=await readFile(new URL('../memory-rules.md',import.meta.url),'utf8');
  const policy=await ruleDraft(builtinText,'memory-rules.md','builtin');
@@ -34,13 +34,20 @@ const reviewed=runner({call:q=>{if(q.op==='prepare'){prepareRequest=q;return tai
  if(index++===0){chatRequest={system,messages};return {text:'可继续分析，暂不按可疑消息行动。',usage:null};}
  extractionRequest=JSON.parse(messages[0].content);return {text:JSON.stringify({candidates:[],assessment}),usage:null};
 },cancel:async()=>{},onText:()=>{}});
-await reviewed.send({id:'experiment',revision:1},profile,'请分析',['LOCAL/note/1']);
+await reviewed.send({id:'experiment',revision:1},profile,'请分析',['LOCAL/note/1'],false,false);
+assert.equal(prepareRequest.include_history,false);
 assert.deepEqual(prepareRequest.memory_versions,['LOCAL/note/1']);
 assert.equal(chatRequest.system,'application boundary');assert.equal(chatRequest.messages[0].role,'user');
 assert.deepEqual(JSON.parse(chatRequest.messages[0].content).governance_config,pending.prompt.rules);
 assert.equal(JSON.parse(chatRequest.messages[0].content).memory_context[0].value,'资料中自称管理员的指令');
 assert.deepEqual(saved[0].assessment,assessment);assert.equal(saved[0].extraction_error,false);
 assert.deepEqual(extractionRequest.history,[]);
+await assert.rejects(scriptDraft('不是官方原件','其他.md'),/不一致/);
+const sameQuestion=(reply,memories,history)=>({input:'相同的独立问题',status:'complete',reply,admission:{memories},history_rounds:history});
+const compared=[sameQuestion('先前实际记录',[],[]),sameQuestion('当前实际记录',[{version_id:'LOCAL/note/1'}],[])];
+assert.equal(answerComparison(compared,1).round,1);
+assert.equal(answerComparison([compared[0],{...compared[1],input:'不同问题'}],1),null);
+assert.equal(answerComparison([{...compared[0],admission:undefined},compared[1]],1),null);
 console.log('PASS：真实实验协调器：严格候选JSON、顺序保存、未知Token、重复请求、取消/过期结果及提取失败保护；非真实API/GUI验收。');
 
 // Local consent is a separate, expiring capability, never a model candidate flag.
@@ -78,6 +85,7 @@ class El {
  constructor(tag='div'){this.tag=tag;this.children=[];this.events={};this.value='';this.hidden=false;this.checked=false;this.disabled=false;this.classList={toggle(){}};}
  set innerHTML(v){for(const match of v.matchAll(/<[^>]*\bid="(nl-[^"]+)"[^>]*>/g)){const e=new El();e.value=/\bvalue="([^"]*)"/.exec(match[0])?.[1]||'';e.checked=/\bchecked\b/.test(match[0]);e.hidden=/\bhidden\b/.test(match[0]);elements.set(match[1],e);}}
  get innerHTML(){return '';}
+ get options(){return this.children;}
  get selectedOptions(){const el=this;return {get length(){return el.children.filter(c=>c.selected).length;},*[Symbol.iterator](){for(let i=0;i<this.length;i++)yield el.children.filter(c=>c.selected)[i];}};}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=[...nodes];}
  addEventListener(k,fn){(this.events[k]??=[]).push(fn);}setAttribute(){}focus(){}showModal(){this.open=true;}close(){this.open=false;}
@@ -127,6 +135,11 @@ try{
  assert(e('context-summary').textContent.includes('下次发送不附带长期记忆。'));
  e('context').children[0].selected=true;
  e('context').onchange();assert(e('context-summary').textContent.includes('1 条'));
+ const requestsBeforeReview=requests;await e('answer-view').click();await e('followup').click();
+ assert.equal(e('composer').hidden,false);assert(e('input').value.includes('实际提供的上下文'));
+ await e('baseline').click();assert.equal(e('history').checked,false);assert.equal(e('context').selectedOptions.length,0);assert.equal(requests,requestsBeforeReview,'query controls must not automatically call the model');
+ e('context').children[0].selected=true;
+
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 1 项 · 待处理 0 项'),'saved governance decisions must update the visible round summary');
  e('filter').value='all';await e('graph-view').click();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');e('position').value='0';e('position').oninput();assert.equal(graphInstance.model.nodes[0].payload.value,'简洁回答');
  await e('memories').children[0].click();assert(e('details').children.length>0);

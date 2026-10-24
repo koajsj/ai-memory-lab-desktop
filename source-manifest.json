@@ -18,8 +18,8 @@
       "sha256": "fa34b005569307ad99ff58d8cd3cd39ce7a4a7efae7e51d27ae964f689292efe"
     },
     "app/QUICKSTART.md": {
-      "size": 3060,
-      "sha256": "6b02c355f6048368efe57599952ae26d0570d63750c261bcf3a16c90336e1072"
+      "size": 3960,
+      "sha256": "63c15d80cae55c20ac7540e387b1246758b72507818054514bf3dd032ae02e84"
     },
     "app/README.md": {
       "size": 8476,
@@ -30,8 +30,8 @@
       "sha256": "cf5ab2fa406527e77c943b0bbad72c8925c3377cf500e295b65e496b8ac45741"
     },
     "app/app.js": {
-      "size": 37121,
-      "sha256": "81065069382c3b08772e2c2cc10dfebf530527617c3019916cc12eb359b92d0d"
+      "size": 37147,
+      "sha256": "d3339d2ca6e7e44b3dee8347ef2941463bdfdb953aa0c576900239d50e5d635b"
     },
     "app/build-kernel.py": {
       "size": 3552,
@@ -66,8 +66,8 @@
       "sha256": "503631e8bd53003fb8c7832e178c9536396930ca7e408aacf654eac9e15af37b"
     },
     "app/native-ui.js": {
-      "size": 45622,
-      "sha256": "f9b049705e3b54211cd960b0acf54a410285fea78f0a8bd023fec209950a7d55"
+      "size": 54971,
+      "sha256": "9ea2161dd371df64af323c187b4f98bd27ce2879e1885c45190fdeae04495f02"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -154,8 +154,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "app/style.css": {
-      "size": 33003,
-      "sha256": "c37c01bbb3e76085c7be4289d528cfdf232618218ab148f42f5bea3e50b6686d"
+      "size": 33670,
+      "sha256": "acc0d2f1d63a47892f0315a622bba5aa22e792284253b42883536d744ee7ddbe"
     },
     "app/sync-frontend.mjs": {
       "size": 1425,
@@ -174,8 +174,8 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 77012,
-      "sha256": "cdb7c003892356f2feb3002b5ad087b46011a1f3f44b9a33262029fc7abc9136"
+      "size": 79625,
+      "sha256": "f54d5ea81ced9c0fd18e1b4f5dabd04508c247c388410b53fbdd2589efa21ce7"
     },
     "tools/check_native_worker.py": {
       "size": 5640,
@@ -186,8 +186,8 @@
       "sha256": "ceb03707a708ef2c6fcb0b5f72e15be3c8088409f736b1edcb0a8ce289ef6734"
     },
     "tools/desktop_service.py": {
-      "size": 46696,
-      "sha256": "59707424b0789183a48c5b1e69c60f227d6dc5354e0bbcdfe2b18dc8f7148452"
+      "size": 47297,
+      "sha256": "3dd46e1cde004a95227f25baa07579589ea8375f1dc051a64e169f3e3c3c3003"
     },
     "tools/engine.py": {
       "size": 30748,
@@ -206,16 +206,16 @@
       "sha256": "47ac5e2c103a88102070ffb48e2c4f1114c1dce6dbb7d3f60b8762eb24c589b5"
     },
     "web-public/app.js": {
-      "size": 37121,
-      "sha256": "81065069382c3b08772e2c2cc10dfebf530527617c3019916cc12eb359b92d0d"
+      "size": 37147,
+      "sha256": "d3339d2ca6e7e44b3dee8347ef2941463bdfdb953aa0c576900239d50e5d635b"
     },
     "web-public/build.mjs": {
       "size": 1589,
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 34121,
-      "sha256": "cd78ff59fd4c56d919e75219adcde22a6e5248d2c0d1e35cb54e9d395b9e4ea0"
+      "size": 35309,
+      "sha256": "da163b8799148c538ea69f162f1bac8f3d3b97c7bcade70a519c51fbeccb7dbe"
     },
     "web-public/check-sandbox.mjs": {
       "size": 17901,
@@ -246,8 +246,8 @@
       "sha256": "503631e8bd53003fb8c7832e178c9536396930ca7e408aacf654eac9e15af37b"
     },
     "web-public/native-ui.js": {
-      "size": 45622,
-      "sha256": "f9b049705e3b54211cd960b0acf54a410285fea78f0a8bd023fec209950a7d55"
+      "size": 54971,
+      "sha256": "9ea2161dd371df64af323c187b4f98bd27ce2879e1885c45190fdeae04495f02"
     },
     "web-public/package-lock.json": {
       "size": 14868,
@@ -286,8 +286,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "web-public/style.css": {
-      "size": 33003,
-      "sha256": "c37c01bbb3e76085c7be4289d528cfdf232618218ab148f42f5bea3e50b6686d"
+      "size": 33670,
+      "sha256": "acc0d2f1d63a47892f0315a622bba5aa22e792284253b42883536d744ee7ddbe"
     }
   }
 }

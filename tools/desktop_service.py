@@ -354,17 +354,23 @@ class Service:
                         if len(json.dumps(records+[record],ensure_ascii=False,separators=(',',':')))>16000:
                             omitted.append(dict(version_id=version,reason='context_budget'));continue
                         sent.append(m);records.append(record)
-                    admission.update(memories=sent,denied=[],requested_versions=selected,omitted=omitted)
+                    # Keep the core's value-free denial reasons. Unselected admitted
+                    # versions are a user choice, not a governance rejection.
+                    admission.update(memories=sent,requested_versions=selected,omitted=omitted,
+                                     unselected=[dict(version_id=v,reason='not_selected') for v in permitted if v not in selected])
                     state['pending']['admission']=admission
+                    include_history=q.get('include_history',True)
+                    if type(include_history) is not bool:raise ValueError('聊天上下文选择无效')
+                    state['pending']['include_history']=include_history
                     rounds=[];size=0
-                    for i in range(len(state['turns'])-1,state['context_start']-1,-1):
+                    for i in (range(len(state['turns'])-1,state['context_start']-1,-1) if include_history else []):
                         turn=state['turns'][i]
                         if turn['status']!='complete':continue
                         length=len(turn['input'])+len(turn['reply'])
                         if len(rounds)>=20 or size+length>64000:break
                         rounds.append(i+1);size+=length
                     state['pending']['history_rounds']=sorted(rounds)
-                    state['pending']['history_omitted']=[dict(round=i+1,reason='governance_reset' if i<state['context_start'] else 'incomplete' if t['status']!='complete' else 'context_budget') for i,t in enumerate(state['turns']) if i+1 not in rounds]
+                    state['pending']['history_omitted']=[dict(round=i+1,reason='user_excluded' if not include_history else 'governance_reset' if i<state['context_start'] else 'incomplete' if t['status']!='complete' else 'context_budget') for i,t in enumerate(state['turns']) if i+1 not in rounds]
                 elif op in ('finish','abort'):
                     pending=state['pending']
                     if not pending or pending['request_id']!=q.get('request_id'):raise ValueError('请求已结束或过期')

@@ -106,7 +106,7 @@
    if(!a){e['admission-summary'].textContent='本轮未记录检索准入，不能从已保存状态推定可用。';return;}
    const records=new Map((frame().governance?.versions||[]).map(r=>[r.version_id,r]));
    e['admission-summary'].textContent=`当轮记录：${a.allowed_ids.length} 项准入 · ${a.denied.length} 项限制。`;
-   for(const id of a.allowed_ids){const r=records.get(id);const li=text('li',M.label(r.key)+' · 当轮准入'+(r.payload?'':'；载荷已清除，不恢复原值'));li.append(text('small',id));e['admission-list'].append(li);}
+   for(const id of a.allowed_ids){const r=records.get(id);const li=text('li',M.label(r.key)+'：'+(r.payload?.value??'原值已清除')+' · 当轮准入');li.append(text('small',id));e['admission-list'].append(li);}
    const reasons={contradiction:'存在未解决冲突，限制作为当前依据',future:'生效时间在未来，暂不进入当前回答',expired:'信息已经失效',permission:'当前用途或权限不允许',lineage:'派生依据不可用',paused:'任务已暂停，当前行动不准入'};
    for(const d of a.denied)e['admission-list'].append(text('li',reasons[d.reason]||('已记录限制：'+d.reason)));
    if(!a.allowed_ids.length&&!a.denied.length)e['admission-list'].append(text('li','没有登记准入项或限制项。'));
@@ -170,7 +170,7 @@
    e.export.disabled=e.permission.value!=='owner'||experimentMode;e['choose-file'].disabled=experimentMode;e.restore.disabled=experimentMode;
    e.policy.textContent=ds.data.policy.version+' / '+ds.data.policy.sha256.slice(0,8);e['data-name'].textContent=`${ds.role} · ${ds.data.frames.length} 轮模拟`;e.workbench.classList.toggle('experiment-active',experimentMode);e['role-name'].textContent=ds.role+' · 角色专属作用域';
    e['overview-state'].textContent=visible()?(f.decisions[0]?.reason||'本轮没有记录变化。'):'当前视角不展示私人内容。';e['overview-state'].title=e['overview-state'].textContent;
-   e['round-status'].textContent=ds.data.experiment?'结构化操作记录 · 本地模拟':f.status+' · 本地';e['round-title'].textContent='第 '+f.round+' 轮 · '+M.sourceNames[f.source];
+   e['round-status'].textContent=ds.data.experiment?'结构化操作记录 · 本地模拟':f.status+' · 仅结构化夹具断言；非模型效果';e['round-title'].textContent='第 '+f.round+' 轮 · '+M.sourceNames[f.source];
    renderRound();
    e.annotation.textContent=visible()?f.annotation:'';
    e.diff.textContent=visible()?['新增：'+(f.diff.added.map(k=>k.split('.').map(M.label).join(' · ')).join('、')||'无'),'更新：'+(f.diff.changed.map(k=>k.split('.').map(M.label).join(' · ')).join('、')||'无'),'移出：'+(f.diff.removed.map(k=>k.split('.').map(M.label).join(' · ')).join('、')||'无')].join('\n'):'字段和值已隐藏。';

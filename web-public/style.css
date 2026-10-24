@@ -128,3 +128,11 @@ dl{margin:12px 0;display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px 1
 @media(prefers-reduced-motion:reduce){.native-lab button{transition:none}.native-setup,.native-workspace{animation:none}}
 
 .native-lab #nl-personal-form{display:grid;grid-template-columns:1fr 2fr;align-items:end;gap:10px;margin:12px 0}.native-lab #nl-personal-form label:nth-child(2){grid-column:1/-1}.native-lab #nl-personal-preview{padding:10px 0}.native-lab #nl-personal-preview button{margin:4px 8px 4px 0}
+
+/* Native-only script review and controlled follow-up queries. */
+.native-script{margin:0 24px 8px;max-height:30dvh;overflow:auto;border-bottom:1px solid var(--line);flex-shrink:0}
+.native-script>summary{cursor:pointer;padding:8px 0}.native-script label{max-width:200px;margin:8px 0}
+.native-script pre{max-height:120px;overflow:auto;margin:8px 0}.native-script p{font-size:13px;color:var(--muted)}
+.native-lab #nl-query-options{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0}
+.native-lab #nl-query-options label{font-size:13px}.native-nav{flex-wrap:wrap}
+.native-conversation>details{margin:12px 0}.native-conversation summary{cursor:pointer}

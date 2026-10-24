@@ -70,6 +70,7 @@ fn main() {
             desktop::experiment_call,
             desktop::default_rules,
             desktop::import_rules,
+            desktop::import_chat_archive,
             desktop::save_profile,
             desktop::delete_profile,
             desktop::cancel_model,

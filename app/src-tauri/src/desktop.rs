@@ -183,11 +183,14 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
     }
     if out["ok"] != true {
         let message = out["error"].as_str().unwrap_or("");
-        let safe = if matches!(
-            message,
-            "实验达到8MB容量，请导出后新建"
-                | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。"
-        ) {
+        let safe = if (message.starts_with("会话ZIP")
+            && message.len() <= 100
+            && !message.chars().any(char::is_control))
+            || matches!(
+                message,
+                "实验达到8MB容量，请导出后新建"
+                    | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。"
+            ) {
             message.into()
         } else {
             "治理操作失败；内核未返回可识别的错误".into()
@@ -273,6 +276,23 @@ pub async fn import_rules() -> Result<Option<Value>, String> {
         Ok(Some(json!({"text": text, "name": file.file_name()})))
     } else {
         Ok(None)
+    }
+}
+#[tauri::command]
+pub async fn import_chat_archive(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let selected = rfd::AsyncFileDialog::new()
+        .set_title("只读导入本机会话 ZIP")
+        .add_filter("ZIP archive", &["zip"])
+        .pick_file()
+        .await;
+    match selected {
+        Some(file) => {
+            let path = file.path().to_str().ok_or("会话路径无法表示")?;
+            service(&app, json!({"op":"inspect_chat_archive","path":path}))
+                .await
+                .map(Some)
+        }
+        None => Ok(None),
     }
 }
 // Credentials and SQLite cannot share a transaction. Restore the previous secret

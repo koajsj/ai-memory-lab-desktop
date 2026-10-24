@@ -92,7 +92,7 @@ class El {
  querySelector(id){return elements.get(id.slice(1));}querySelectorAll(){return [...elements.values()];}
  async click(){if(this.onclick)await this.onclick();for(const f of this.events.click||[])await f();}
 }
-let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,loseDecideReply=false,imported=null;
+let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,loseDecideReply=false,imported=null,archiveImport=null;
 const preferences=new Map(),windowEvents={};let sampleData=null;
 let lastPrepared;
 const service=q=>{const value=JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;if(q.op==='prepare')lastPrepared=value;return value;};
@@ -101,6 +101,7 @@ const timers=new Map();let timerId=0;
 const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
+ if(command==='import_chat_archive'){if(archiveImport instanceof Error)throw archiveImport;return archiveImport;}
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report',evidence:{source:'current_input',quote:JSON.parse(args.messages[0].content).input}}],assessment}),usage:null};}
@@ -117,6 +118,17 @@ try{
  assert.equal(e('guide').hidden,false);await e('guide-skip').click();assert.equal(e('guide').hidden,true);
  await e('help').click();for(let i=0;i<4;i++){await e('guide-action').click();await e('guide-next').click();}assert.equal(e('guide').hidden,true);
  assert.equal(requests,0,'help must never call a model');assert.equal(service({op:'list'}).length,0,'help must not create experiments');
+ await e('archive-view').click();assert.equal(e('archive-panel').hidden,false);
+ archiveImport={format:'memory-lab.chat-archive.v1',name:'synthetic.zip',sha256:'a'.repeat(64),
+  counts:{batches:2,messages:4,user:2,assistant:2,assistant_with_text:2},
+  batches:[{number:1,user:{time:'2026-01-01T00:00:00+00:00',text:'第一批用户输入'},assistant:[{time:'2026-01-01T00:00:01+00:00',text:'第一批回复'}]},
+           {number:2,user:{time:'2026-01-02T00:00:00+00:00',text:'第二批用户输入'},assistant:[{time:'2026-01-02T00:00:01+00:00',text:'第二批回复'}]}]};
+ await e('archive-import').click();assert.equal(e('archive-list').children.length,2);
+ await e('archive-list').children[1].click();assert(e('archive-detail').children.some(x=>x.textContent==='第二批用户输入'));
+ archiveImport=null;await e('archive-import').click();assert.equal(e('archive-list').children.length,2,'cancel preserves the imported archive');
+ assert.equal(requests,0);assert.equal(service({op:'list'}).length,0,'archive viewing must not create experiments');
+ await e('archive-clear').click();assert.equal(e('archive-list').children.length,0);
+ await e('start-view').click();
  e('name').value='最小DOM实验';await e('new').click();assert.equal(service({op:'list'}).length,1);
  assert.equal(e('setup').hidden,true);assert.equal(e('workspace').hidden,false);
  assert.equal(e('context-panel').hidden,true,'empty experiment has no context selection');

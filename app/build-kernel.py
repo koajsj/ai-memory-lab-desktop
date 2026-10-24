@@ -46,7 +46,7 @@ def main():
         target=out/('memory-kernel-'+host+'.exe')
         # Atomic replacement of this generated sidecar; never touch user experiments.
         staged=target.with_suffix(target.suffix+'.new');staged.write_bytes(binary.read_bytes());staged.chmod(0o755);os.replace(staged,target)
-        files=['app/build-kernel.py','tools/desktop_service.py','tools/engine.py','tools/governance.py','tools/json_input.py']
+        files=['app/build-kernel.py','tools/desktop_service.py','tools/chat_archive.py','tools/engine.py','tools/governance.py','tools/json_input.py']
         record=dict(format='memory-lab.kernel-build.v1',target=host,python=platform.python_version(),pyinstaller=PyInstaller.__version__,sha256=hashlib.sha256(target.read_bytes()).hexdigest(),size=target.stat().st_size,archive=inventory,inputs={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in files})
         (out/'kernel-manifest.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(record,indent=2))

@@ -2,10 +2,13 @@
 import json
 import os
 import sqlite3
+import subprocess
 import sys
+import zipfile
 from pathlib import Path
 import pytest
 from tools.desktop_service import Service
+from tools.chat_archive import inspect_chat_archive
 from tools.check_native_worker import check as check_native_worker
 
 @pytest.fixture
@@ -14,6 +17,70 @@ def service(tmp_path):
 
 def create(s):
     return s.call({'op':'create','name':'实验','rules':'保留来源，拒绝越权。'})
+
+def archive_file(tmp_path, messages, member='chat/export/session.json'):
+    path=tmp_path/'conversation.zip'
+    with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member,json.dumps({'info':{'id':'session-1'},'messages':messages}))
+    return path
+
+def archive_message(ident,role,at,parts,parent=None):
+    info={'id':ident,'sessionID':'session-1','role':role,'time':{'created':at}}
+    if parent:info['parentID']=parent
+    return {'info':info,'parts':parts}
+
+def test_chat_archive_groups_actual_messages_without_promoting_internal_parts(tmp_path):
+    messages=[
+        archive_message('u1','user',1000,[{'type':'text','text':'第一批输入'}]),
+        archive_message('a1','assistant',1001,[{'type':'reasoning','text':'不可展示的内部内容'},{'type':'text','text':'第一批答复'},{'type':'tool','state':{'secret':'不可展示的工具数据'}}],'u1'),
+        archive_message('a2','assistant',1002,[{'type':'step-start'}],'u1'),
+        archive_message('u2','user',1003,[{'type':'text','text':'第二批输入'}]),
+        archive_message('a3','assistant',1004,[{'type':'text','text':'第二批答复'}],'u2'),
+    ]
+    result=inspect_chat_archive(archive_file(tmp_path,messages))
+    assert result['counts']=={'batches':2,'messages':5,'user':2,'assistant':3,'assistant_with_text':2}
+    assert [len(batch['assistant']) for batch in result['batches']]==[2,1]
+    assert result['batches'][0]['assistant'][0]['text']=='第一批答复'
+    assert result['batches'][0]['assistant'][1]['text']==''
+    assert result['historical_memory_evidence'] is False
+    assert '不可展示' not in json.dumps(result,ensure_ascii=False)
+
+@pytest.mark.parametrize('member',[('../escape.json'),('/absolute.json'),('chat\\export\\session.json')])
+def test_chat_archive_rejects_unsafe_members(tmp_path,member):
+    path=archive_file(tmp_path,[archive_message('u1','user',1000,[{'type':'text','text':'输入'}])],member)
+    with pytest.raises(ValueError):inspect_chat_archive(path)
+
+def test_chat_archive_rejects_bad_order_and_unknown_parent_without_partial_import(tmp_path):
+    base=[archive_message('u1','user',1000,[{'type':'text','text':'输入'}]),
+          archive_message('a1','assistant',1001,[{'type':'text','text':'回复'}],'u1')]
+    for messages in ([base[1],base[0]], [base[0],{**base[1],'info':{**base[1]['info'],'parentID':'unknown'}}]):
+        with pytest.raises(ValueError):inspect_chat_archive(archive_file(tmp_path,messages))
+
+def test_chat_archive_rejects_bomb_and_corruption(tmp_path):
+    path=tmp_path/'bomb.zip'
+    with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('chat/export/session.json',b'x'*5_000_000)
+    with pytest.raises(ValueError):inspect_chat_archive(path)
+    path.write_bytes(b'not-a-zip')
+    with pytest.raises(ValueError):inspect_chat_archive(path)
+
+def test_chat_archive_worker_is_read_only_and_returns_safe_error(tmp_path):
+    archive=archive_file(tmp_path,[archive_message('u1','user',1000,[{'type':'text','text':'本地样本'}])])
+    root=tmp_path/'unused-experiments'
+    def invoke(path):
+        process=subprocess.run([sys.executable,'-B','-m','tools.desktop_service',str(root)],
+                               input=json.dumps({'op':'inspect_chat_archive','path':str(path)}).encode(),
+                               capture_output=True,check=False)
+        return process,json.loads(process.stdout)
+    process,result=invoke(archive)
+    assert process.returncode==0 and result['ok'] is True
+    assert result['result']['counts']['batches']==1
+    assert not root.exists(), 'ZIP inspection must not create SQLite or experiment state'
+    archive.write_bytes(b'invalid')
+    process,result=invoke(archive)
+    assert process.returncode!=0 and result['ok'] is False
+    assert result['error']=='会话ZIP损坏或无法读取'
+    assert '本地样本'.encode() not in process.stdout and '本地样本'.encode() not in process.stderr
 
 def test_new_finish_cannot_skip_candidate_classification(service):
     exp=create(service)

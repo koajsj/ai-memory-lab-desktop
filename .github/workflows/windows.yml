@@ -102,7 +102,7 @@ jobs:
           # App-owned outputs are removed before caching; source-only commits can reuse dependencies.
           key: windows-cargo-v2-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('app/src-tauri/Cargo.lock', 'app/src-tauri/Cargo.toml') }}
           restore-keys: |
-            windows-cargo-v1-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('app/src-tauri/Cargo.lock', 'app/src-tauri/Cargo.toml') }}-
+            windows-cargo-v2-${{ runner.arch }}-${{ steps.rust.outputs.version }}-
       - name: Invalidate project outputs and install locked dependencies
         run: |
           # Only dependency libraries are reused. Recompile app-owned code/resources;

@@ -5,9 +5,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import zipfile
 from tempfile import TemporaryDirectory
 
 SAFE_ERRORS = {
+    '会话ZIP损坏或无法读取',
     '检测到敏感内容或凭据，请先脱敏；未保存或发送',
     '实验内核与保存状态不一致',
     '实验达到8MB容量，请导出后新建',
@@ -72,13 +74,25 @@ def check(binary):
         assert invalid_root.read_text(encoding='utf-8') == 'must not overwrite'
         assert invoke({'op': 'remove', 'id': exp['id'], 'revision': exp['revision']}) is True
         assert invoke({'op': 'list'}) == []
+        archive = Path(tmp) / '分批 会话.zip'
+        conversation = {'info': {'id': 'session'}, 'messages': [
+            {'info': {'id': 'u1', 'sessionID': 'session', 'role': 'user', 'time': {'created': 1000}},
+             'parts': [{'type': 'text', 'text': '本机导入样本'}]},
+            {'info': {'id': 'a1', 'sessionID': 'session', 'role': 'assistant', 'parentID': 'u1', 'time': {'created': 1001}},
+             'parts': [{'type': 'text', 'text': '样本回复'}]},
+        ]}
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as package:
+            package.writestr('chat/export/session.json', json.dumps(conversation))
+        reviewed = invoke({'op': 'inspect_chat_archive', 'path': str(archive)})
+        assert reviewed['counts']['batches'] == 1 and reviewed['historical_memory_evidence'] is False
+        assert invoke({'op': 'list'}) == [], 'read-only import must not create an experiment'
         try:
             invoke({'op': 'open', 'id': exp['id']})
         except AssertionError as error:
             assert '实验操作失败' in str(error)
         else:
             raise AssertionError('已删除实验仍可打开')
-    print('PASS: packaged kernel: restricted PATH, UTF-8/spaces, save/reopen/export/delete, cancellation, terminated process recovery and invalid destination; no GUI/API test')
+    print('PASS: packaged kernel: restricted PATH, UTF-8/spaces, save/reopen/export/delete, read-only ZIP inspection, cancellation, terminated process recovery and invalid destination; no GUI/API test')
 
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@ from datetime import date
 from .engine import Store, Context, unsafe_fact, sensitive, credentials, iso, personal_kind, forbidden_personal, PERSONAL_CATEGORIES
 from .governance import Evidence
 from .json_input import parse_json
+from .chat_archive import ArchiveError, inspect_chat_archive
 
 FORMAT='memory-lab.model-experiment.v1'
 CONTENT_ERROR='检测到敏感内容或凭据，请先脱敏；未保存或发送'
@@ -566,11 +567,14 @@ def main():
     try:
         raw=sys.stdin.buffer.read(8*1024*1024+1)
         if len(raw)>8*1024*1024:raise ValueError('请求过大')
-        result=Service(Path(sys.argv[1])).call(parse_json(raw.decode('utf-8')))
+        request=parse_json(raw.decode('utf-8'))
+        # Archive inspection is read-only and never creates an experiment database.
+        result=(inspect_chat_archive(request['path']) if isinstance(request,dict) and request.get('op')=='inspect_chat_archive'
+                else Service(Path(sys.argv[1])).call(request))
         print(json.dumps({'ok':True,'result':result},ensure_ascii=False))
     except (ValueError,KeyError,TypeError,IndexError,OSError,sqlite3.Error,RecursionError) as error:
         public_errors={CONTENT_ERROR,'保存已提交但最终状态无法核对，请重新打开实验','保存确认已失效或与内容、用途及范围不一致；请重新提供','个人信息不自动发送或保存；请使用本地私人记忆入口，或先脱敏','敏感保存需要独立确认，不继承旧授权','联系方式格式无法安全确认，请脱敏后使用','实验达到8MB容量，请导出后新建','模型候选缺少依据类型，不能自动补成用户确认','候选依据类型无效','实验内核与保存状态不一致','实验历史版本与内核不一致','实验历史快照与内核不一致'}
-        reason=str(error) if str(error) in public_errors else '实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。'
+        reason=str(error) if isinstance(error,ArchiveError) or str(error) in public_errors else '实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。'
         print(json.dumps({'ok':False,'error':reason},ensure_ascii=False))
         return 1
     return 0

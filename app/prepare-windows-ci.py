@@ -10,7 +10,7 @@ SHARED = ['index.html', 'style.css', 'state.js', 'model.js', 'app.js', 'platform
           'native-ui.js', 'sandbox.js', 'lab-ui.js', 'src/graph.js', 'src/view-math.mjs', 'src/audit.mjs']
 FILES = ['memory-rules.md', 'requirements-dev.txt', '.github/workflows/windows.yml',
          'docs/windows-delivery.md', 'tests/test_desktop_service.py',
-         'tools/desktop_service.py', 'tools/engine.py', 'tools/governance.py', 'tools/json_input.py',
+         'tools/desktop_service.py', 'tools/chat_archive.py', 'tools/engine.py', 'tools/governance.py', 'tools/json_input.py',
          'tools/check_native_worker.py', 'tools/check_windows_release.mjs',
          'app/package.json', 'app/package-lock.json', 'app/build.mjs', 'app/sync-frontend.mjs',
          'app/build-kernel.py', 'app/check-kernel.mjs', 'app/package-windows.mjs',
@@ -61,7 +61,7 @@ def export(destination):
     package.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     data = 'window.REPLAY_DATA=' + json.dumps(demo, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c') + ';\n'
     report = json.loads((destination / 'web-public/evaluation.json').read_text(encoding='utf-8'))
-    inputs = ['memory-rules.md', 'tools/engine.py', 'tools/governance.py', 'tools/desktop_service.py',
+    inputs = ['memory-rules.md', 'tools/engine.py', 'tools/governance.py', 'tools/desktop_service.py', 'tools/chat_archive.py',
               'tools/json_input.py', 'web-public/src/public-demo.json']
     # Preserve the public evaluation's original claims; input hashes are build provenance only.
     report['inputs'] = {name: hashlib.sha256((destination / name).read_bytes()).hexdigest() for name in inputs}

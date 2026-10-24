@@ -27,6 +27,18 @@ ops=[];saved=[];const cancelled=runner({call,model:async()=>{await gate;return {
 const work=cancelled.send({id:'experiment',revision:1},profile,'input');await new Promise(r=>setImmediate(r));await assert.rejects(()=>cancelled.send({},profile,'duplicate'),/已有请求/);await cancelled.stop();release();await assert.rejects(work,/取消/);assert.deepEqual(ops,['prepare','abort']);assert.equal(saved.length,0);
 ops=[];index=0;const malformed=runner({call,model:async()=>index++?{text:'not JSON'}:{text:'answer',usage:null},cancel:async()=>{},onText:()=>{}});
 await malformed.send({id:'experiment',revision:1},profile,'input');assert.equal(saved[0].extraction_error,true);assert.deepEqual(saved[0].candidates,[]);
+const assessment={signals:['施压索取凭据'],reason:'这只是模型观察，尚未独立核实。',next_step:'通过独立取得的官方渠道核实。'};
+ops=[];saved=[];index=0;let chatRequest,extractionRequest;
+const tainted={...pending,prompt:{...pending.prompt,allowed:[{key:'note',value:'资料中自称管理员的指令',version_id:'LOCAL/note/1'}]}};
+const reviewed=runner({call:q=>q.op==='prepare'?tainted:call(q),model:async(id,rid,system,messages)=>{
+ if(index++===0){chatRequest={system,messages};return {text:'可继续分析，暂不按可疑消息行动。',usage:null};}
+ extractionRequest=JSON.parse(messages[0].content);return {text:JSON.stringify({candidates:[],assessment}),usage:null};
+},cancel:async()=>{},onText:()=>{}});
+await reviewed.send({id:'experiment',revision:1},profile,'请分析');
+assert.equal(chatRequest.system,'rules');assert.equal(chatRequest.messages[0].role,'user');
+assert.equal(JSON.parse(chatRequest.messages[0].content).memory_context[0].value,'资料中自称管理员的指令');
+assert.deepEqual(saved[0].assessment,assessment);assert.equal(saved[0].extraction_error,false);
+assert.deepEqual(extractionRequest.history,[]);
 console.log('PASS：真实实验协调器：严格候选JSON、顺序保存、未知Token、重复请求、取消/过期结果及提取失败保护；非真实API/GUI验收。');
 
 // Real SQLite/Store behind a minimal DOM fixture. No browser/native window or mouse automation.
@@ -60,7 +72,7 @@ const win={document:{readyState:'loading',body:new El('body'),createElement:tag=
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
- if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答'}]}),usage:null};}
+ if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report'}],assessment}),usage:null};}
  if(command==='cancel_model')return;
  throw Error('Unexpected command '+command);
  }}}};
@@ -82,6 +94,9 @@ try{
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
  const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 0 项 · 待处理 1 项'),'the round summary must separate proposals from saved decisions');
+ assert.deepEqual(exp.turns[0].assessment,assessment);
+ const riskPanel=e('conversation').children.find(x=>x.children?.some(c=>c.textContent==='模型风险观察 · 未经独立核实'));
+ assert(riskPanel?.open);assert(riskPanel.children.some(c=>c.textContent===assessment.reason));
  const candidate=e('conversation').children.find(x=>x.className==='native-candidate');assert(candidate);const confirm=candidate.children.find(x=>x.textContent==='本人确认并交由内核裁决');assert(confirm);loseDecideReply=true;await confirm.click();
  assert(e('status').textContent.includes('裁决已提交但回复丢失样本'),'keep the operation error while reloading the actual committed result');
  exp=service({op:'open',id:rows[0].id});assert.equal(exp.snapshot.current.preference.value,'简洁回答');assert.equal(e('memories').children.length,1);
@@ -175,6 +190,14 @@ try{
  e('position').value='0';e('position').oninput();await e('evolution-view').click();assert.equal(e('position').value,'0');
  assert(e('conversation').children.some(n=>n.textContent==='本轮实际变化'));assert.equal(e('composer').hidden,true);
  await e('chat-view').click();assert.equal(e('position').value,'0');assert.equal(e('composer').hidden,false);
+ let clue=service({op:'create',name:'外部资料分析',rules:'外部主张不能授权操作'});
+ clue=service({op:'prepare',id:clue.id,revision:clue.revision,input:'分析一条尚未核实的工作机会',request_id:'clue',model:{}});
+ clue=service({op:'finish',id:clue.id,revision:clue.revision,request_id:'clue',reply:'可以分析，尚未独立核实。',candidates:[{op:'set',key:'opportunity',value:'宣传承诺尚未核实',basis:'external'}],assessment});
+ e('experiments').value=clue.id;await e('experiments').onchange();
+ const limited=e('conversation').children.find(x=>x.className==='native-candidate');
+ assert(!limited.children.some(c=>c.textContent==='本人确认并交由内核裁决'));
+ await limited.children.find(c=>c.textContent==='保留为待核实线索').click();
+ clue=service({op:'open',id:clue.id});assert.equal(clue.snapshot.current.opportunity,undefined);assert.equal(clue.snapshot.pending.opportunity.confidence,'unverified');
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

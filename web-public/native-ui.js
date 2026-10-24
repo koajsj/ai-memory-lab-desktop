@@ -11,8 +11,8 @@ async function ruleDraft(text,name,kind){
 }
 function extracted(text){
  const value=root.MemoryModel.parseJSON?root.MemoryModel.parseJSON(text):JSON.parse(text);
- if(!value||Object.keys(value).length!==1||!Array.isArray(value.candidates)||value.candidates.length>16)throw Error('模型未返回候选JSON数组');
- return value.candidates;
+ if(!value||Object.keys(value).some(k=>!['candidates','assessment'].includes(k))||!Array.isArray(value.candidates)||value.candidates.length>16)throw Error('模型未返回候选JSON数组');
+ return value;
 }
 // One generation owns chat+extraction+save. A cancelled generation never calls finish.
 function runner({call,model,cancel,onText}){
@@ -22,15 +22,16 @@ function runner({call,model,cancel,onText}){
   try{
    pending=await call({op:'prepare',id:exp.id,revision:exp.revision,input,request_id:request,model:{name:profile.name,protocol:profile.protocol,model:profile.model,base_url:profile.base_url}});
    if(cancelled)throw Error('请求已取消');
-   const reply=await model(profile.id,request,pending.prompt.system,pending.prompt.messages,profile.stream!==false,t=>{if(!cancelled)onText(t);});
+   const messages=pending.prompt.allowed?.length?[{role:'user',content:JSON.stringify({memory_context:pending.prompt.allowed})},...pending.prompt.messages]:pending.prompt.messages;
+   const reply=await model(profile.id,request,pending.prompt.system,messages,profile.stream!==false,t=>{if(!cancelled)onText(t);});
    if(cancelled)throw Error('请求已取消');
-   let candidates=[],extractionError=false,extractionUsage=null;
+   let candidates=[],assessment=null,extractionError=false,extractionUsage=null;
    try{
-    const r=await model(profile.id,request,pending.prompt.extraction,[{role:'user',content:JSON.stringify({input,available:pending.prompt.allowed})}],false,()=>{});
-    if(cancelled)throw Error('请求已取消');candidates=await call({op:'validate_candidates',candidates:extracted(r.text)});extractionUsage=r.usage;
+    const r=await model(profile.id,request,pending.prompt.extraction,[{role:'user',content:JSON.stringify({input,history:pending.prompt.messages.slice(0,-1),available:pending.prompt.allowed})}],false,()=>{});
+    if(cancelled)throw Error('请求已取消');const parsed=extracted(r.text);candidates=await call({op:'validate_candidates',candidates:parsed.candidates,assessment:parsed.assessment});assessment=parsed.assessment??null;extractionUsage=r.usage;
    }catch(error){if(cancelled)throw error;extractionError=true;}
    if(cancelled)throw Error('请求已取消');
-   const result=await call({op:'finish',id:exp.id,revision:pending.revision,request_id:request,reply:reply.text,usage:reply.usage,extraction_usage:extractionUsage,candidates,extraction_error:extractionError});
+   const result=await call({op:'finish',id:exp.id,revision:pending.revision,request_id:request,reply:reply.text,usage:reply.usage,extraction_usage:extractionUsage,candidates,assessment,extraction_error:extractionError});
    return result;
   }catch(error){
    if(pending){try{await call({op:'abort',id:exp.id,revision:pending.revision,request_id:request,status:cancelled?'cancelled':'failed'});}catch{/* Reopen shows the real saved pending state for explicit recovery. */}}
@@ -116,7 +117,9 @@ function render(){
  if(view==='evolution'){const d=doc.createElement('details');d.append(text('summary','查看本轮 AI 回复'),...reply);ui.conversation.append(d);}else ui.conversation.append(...reply);
  if(frame&&view==='evolution'){ui.conversation.append(text('h2','本轮实际变化'));if(!['added','changed','removed'].some(k=>frame.diff[k].length))ui.conversation.append(text('p','本轮记忆快照没有变化，原因以实际裁决记录为准。'));for(const d of frame.decisions)ui.conversation.append(text('p',operationName(d.action)+'：'+d.reason));for(const kind of ['added','changed','removed'])for(const path of frame.diff[kind]){const [part,key]=path.split('.');const old=frame.before[part]?.[key]?.value,next=frame.after[part]?.[key]?.value;ui.conversation.append(text('p',`${root.MemoryModel.label(key)}：${old??'未记录 / 已清除'} → ${next??'退出 / 已清除'}`));}}
  const usage=doc.createElement('details');usage.append(text('summary','模型与用量'),text('p',turn.model?.model?'本轮模型：'+(turn.model.name||'未记录')+' · '+turn.model.model:'本轮模型未记录'),text('small',turn.usage?'回复 Token：'+JSON.stringify(turn.usage):'回复 Token 用量未知'));ui.conversation.append(usage);
+ if(!turn.assessment)usage.append(text('small','风险观察未记录，不代表已确认安全。'));
  if(turn.extraction_error)ui.conversation.append(text('p','候选提取失败；回复已保存，没有提交记忆。'));
+ if(turn.assessment){const a=turn.assessment,d=doc.createElement('details');d.open=a.signals.length>0;d.append(text('summary','模型风险观察 · 未经独立核实'));if(a.signals.length)d.append(text('p',a.signals.join('、')));d.append(text('p',a.reason),text('p',a.next_step));ui.conversation.append(d);}
  const decided=Object.keys(turn.results).length,remaining=turn.candidates.length-decided;
  ui.conversation.append(text('h2','模型建议与治理结果'),text('p',`模型建议 ${turn.candidates.length} 项 · 已记录裁决 ${decided} 项 · 待处理 ${remaining} 项`));
  if(!turn.candidates.length)ui.conversation.append(text('p','本轮没有记忆候选，模型回复没有自动写入记忆。'));
@@ -125,8 +128,12 @@ function render(){
   const conditions=doc.createElement('details');conditions.append(text('summary','建议的完整条件'),text('pre',JSON.stringify(c,null,2)));row.append(conditions);
   const result=turn.results[String(index)];if(result)for(const d of result.decisions)row.append(text('p',operationName(d.action)+'：'+d.reason));
   else if(frameIndex===exp.turns.length-1){
+   if(['external','inference'].includes(c.basis)&&!(c.op==='derive'&&c.basis==='inference')){
+    row.append(text('p','外部主张或推断不能充当操作授权，也不因重复或确认按钮变成已核实事实。'),button(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed'?'保留为待核实线索':'核验操作依据',()=>mutate('decide',{index,confirm:false})),button('忽略',()=>mutate('dismiss',{index})));
+   }else{
    if(c.op==='set'&&!c.current_correction&&!c.reactivate&&c.state!=='completed')row.append(button('仅存入待核实区',()=>mutate('decide',{index,confirm:false})));
    row.append(button(c.op==='delete'?'授权删除':c.reactivate?'确认新依据并重新建立':'本人确认并交由内核裁决',async()=>{if(root.confirm(c.op==='delete'?'删除本实验内该记忆及受影响派生，清除可控快照原值。原始对话与既有导出不会被删除。确认？':c.reactivate?'仅在你现在提供了独立、明确的新依据时重新建立；不能以旧记录或旧摘要恢复已删除内容。确认？':'仅当你已核实这项建议及其完整条件时确认。确认只提供本实验的来源依据，仍须接受内核校验。'))await mutate('decide',{index,confirm:true});}),button('忽略',()=>mutate('dismiss',{index})));
+   }
   }ui.conversation.append(row);
  }
  }

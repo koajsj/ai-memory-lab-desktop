@@ -66,8 +66,8 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "app/native-ui.js": {
-      "size": 34403,
-      "sha256": "cd1519b525ff5cfed91fb888ab4237d2f9b29f56595ea4c538361c2dad81ad08"
+      "size": 35640,
+      "sha256": "ea04ee3aff3847972d72f6d785ffa4426ea4a9d131ef375ae69bce3484a50755"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -162,20 +162,20 @@
       "sha256": "9651b00eb6b73fe34a9a8b644c25d7f654610288b0e1b4fc838b1c033bae5196"
     },
     "docs/windows-delivery.md": {
-      "size": 7910,
-      "sha256": "fd60ee06f49f5447529b5a6af18a93e05e3df8407028b7e579ae189d53cb1cda"
+      "size": 8730,
+      "sha256": "d094b0d44d66afd478190bff5d929b538b53f3f03c0eca56ccb0009ade2b97e7"
     },
     "memory-rules.md": {
-      "size": 16872,
-      "sha256": "682d4c99f35c471e0ee5892c1be0c12c4fbb2770ae78d438ec819cb2824d330b"
+      "size": 18213,
+      "sha256": "e9ff4dafbb02906a3bda30955e845a16d168aa1213d3fa4634f73376a907094a"
     },
     "requirements-dev.txt": {
       "size": 77,
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 29049,
-      "sha256": "19f0452530c187b7c31278ebb836f27bc70f0cfc368ccc582ec90842b618bc8f"
+      "size": 36986,
+      "sha256": "2245324ce440eaaa04731c73e796b37fba10b0f1599f5bc84a85eb890dfc023c"
     },
     "tools/check_native_worker.py": {
       "size": 5251,
@@ -186,8 +186,8 @@
       "sha256": "358d695efc23c061a0dad24b23b142cd3f1badb3187898ec81d0cb45eaf3f19a"
     },
     "tools/desktop_service.py": {
-      "size": 24194,
-      "sha256": "13be7e4bae7e0ecc3a0b6f7dd3691a9a1694fd776cf6eb115158307d39bd6757"
+      "size": 27207,
+      "sha256": "b1e3c95588b06e3411bc15bfba02d5e37ed5b9ee1d2add48e745987ee46afc52"
     },
     "tools/engine.py": {
       "size": 23048,
@@ -214,8 +214,8 @@
       "sha256": "ef4a4fe77669e21eb35b366bc63329ced70bde17d510121caf702bf500ac56e1"
     },
     "web-public/check-native.mjs": {
-      "size": 20560,
-      "sha256": "018b7ef9a388ba0b7f4d7f58377506f12a3a2a92ea86097a567499e172cb7698"
+      "size": 23018,
+      "sha256": "10f6cacc3d1866f496f7b50792d0a8ccfb25a5fc35994953aee5aef5d4699e27"
     },
     "web-public/check-sandbox.mjs": {
       "size": 15801,
@@ -246,8 +246,8 @@
       "sha256": "49f363b15d4e557b684d3d76fd520f2f139b663162dc74c87ed3699b10fddba6"
     },
     "web-public/native-ui.js": {
-      "size": 34403,
-      "sha256": "cd1519b525ff5cfed91fb888ab4237d2f9b29f56595ea4c538361c2dad81ad08"
+      "size": 35640,
+      "sha256": "ea04ee3aff3847972d72f6d785ffa4426ea4a9d131ef375ae69bce3484a50755"
     },
     "web-public/package-lock.json": {
       "size": 14868,

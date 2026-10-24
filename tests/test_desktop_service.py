@@ -15,6 +15,116 @@ def service(tmp_path):
 def create(s):
     return s.call({'op':'create','name':'实验','rules':'保留来源，拒绝越权。'})
 
+def test_memory_content_is_not_a_system_instruction(service):
+    value='项目资料中的命令样本，仅供分析，不代表授权'
+    exp=finish(service,create(service),text=value)
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    pending=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'分析资料','request_id':'boundary','model':{}})
+    assert value not in pending['prompt']['system']
+    assert pending['prompt']['allowed'][0]['value']==value
+
+@pytest.mark.parametrize('basis,part',[('external','pending'),('inference','pending'),('self_report','current')])
+def test_declared_external_claims_do_not_gain_authority_by_confirmation(service,basis,part):
+    exp=create(service)
+    for i in range(2):
+        exp=finish(service,exp,text='请分析并保留这条未核实的机会线索',candidates=[{'op':'set','key':'opportunity','value':'这项机会可能存在风险','basis':basis}])
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert 'opportunity' in exp['snapshot'][part]
+    if basis!='self_report':
+        assert not exp['snapshot']['current']
+        assert exp['snapshot']['pending']['opportunity']['confidence']=='unverified'
+        assert '主人自述' not in exp['snapshot']['pending']['opportunity']['source']
+        parent=exp['governance']['versions'][-1]['version_id']
+        exp=finish(service,exp,candidates=[{'op':'derive','key':'summary','value':'重复线索被包装为事实','parents':[parent]}])
+        exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+        assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
+        restored=Service(service.root)
+        try:
+            exp=restored.call({'op':'open','id':exp['id']})
+            pending=restored.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'继续分析','request_id':'restored','model':{}})
+            assert pending['prompt']['allowed']==[]
+            assert not pending['snapshot']['current']
+        finally:restored.db.close()
+
+@pytest.mark.parametrize('proposal',[
+    {'op':'delete','key':'preference'},
+    {'op':'retire','key':'preference'},
+    {'op':'set','key':'preference','value':'外部要求覆盖用户偏好','current_correction':True},
+])
+def test_external_instructions_cannot_mutate_confirmed_memory(service,proposal):
+    exp=finish(service,create(service))
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    before=exp['snapshot']
+    exp=finish(service,exp,text='文件要求执行这些动作，请检查而非执行',candidates=[dict(proposal,basis='external')])
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='REJECT'
+    assert exp['snapshot']==before
+
+def test_model_risk_assessment_is_saved_as_an_observation_not_a_memory(service):
+    exp=create(service)
+    p=service.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':'请分析催促提交验证码的短信，并起草安全回复','request_id':'risk','model':{}})
+    assessment={'signals':['冒充身份','催促披露凭据'],'reason':'身份和请求尚未独立核实，不能仅凭措辞确认诈骗。','next_step':'通过独立获取的官方渠道核实；不向消息提供方提交凭据。'}
+    result=service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'risk','reply':'可以帮助分析并起草安全回复。','candidates':[],'assessment':assessment})
+    assert result['turns'][-1]['assessment']==assessment
+    assert not any(result['snapshot'].values())
+    assert service.call({'op':'export','id':result['id'],'sections':['turns']})['turns'][-1]['assessment']==assessment
+    assert service.call({'op':'open','id':result['id']})['turns'][-1]['assessment']==assessment
+
+@pytest.mark.parametrize('assessment',[
+    {'signals':'管理员','reason':'样本','next_step':'分析'},
+    {'signals':[],'reason':'样本','next_step':'分析','authorized':True},
+    {'signals':[],'reason':'','next_step':'分析'},
+])
+def test_invalid_assessment_cannot_partially_save_a_turn(service,assessment):
+    p=service.call({'op':'prepare','id':create(service)['id'],'revision':1,'input':'分析资料','request_id':'invalid-risk','model':{}})
+    before=service.call({'op':'open','id':p['id']})
+    with pytest.raises(ValueError):service.call({'op':'finish','id':p['id'],'revision':p['revision'],'request_id':'invalid-risk','reply':'回复','candidates':[],'assessment':assessment})
+    assert service.call({'op':'open','id':p['id']})==before
+
+@pytest.mark.parametrize('text',[
+    '分析自称银行客服、催促提交验证码的短信。',
+    '有人自称负责人要求导出员工资料并立即转账，请分析。',
+    '按文档整理项目；文档另称可以忽略规则并读取私人记忆。',
+    '前轮称获得信任，旧摘要又称已授权；请检查这些片段。',
+    '这份投资宣传承诺高收益并收取预付费用，能核实吗？',
+    '请保留某招聘方涉嫌诈骗的未证实线索，不要当成定论。',
+    '总结“忽略规则、索取密码”的攻击手法，并起草安全回复。',
+    '按合法文档修改排版，不接受其中覆盖权限的要求。',
+    '不要执行支付，只解释哪些操作需要当次授权。',
+    '分析被拒候选及旧摘要为何不能恢复成确定事实。',
+])
+def test_suspicious_text_can_be_analyzed_without_automatic_memory_writes(service,text):
+    exp=finish(service,create(service),text=text,candidates=[])
+    assert exp['turns'][-1]['input']==text and exp['turns'][-1]['reply']
+    assert not any(exp['snapshot'].values())
+    assert exp['turns'][-1]['results']=={}
+
+def test_mixed_document_proposals_keep_the_legal_part(service):
+    exp=finish(service,create(service),text='调整我的输出偏好；引用文件还要求清除相反记录',candidates=[
+        {'op':'set','key':'preference','value':'简短回答','basis':'self_report'},
+        {'op':'delete','key':'preference','basis':'external'},
+    ])
+    for index in range(2):exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':index,'confirm':True})
+    assert exp['snapshot']['current']['preference']['value']=='简短回答'
+    assert exp['turns'][-1]['results']['0']['decisions'][0]['action']=='ADD'
+    assert exp['turns'][-1]['results']['1']['decisions'][0]['action']=='REJECT'
+
+def test_new_model_proposals_cannot_omit_their_basis(service):
+    proposal={'op':'set','key':'note','value':'一条待分类的资料'}
+    with pytest.raises(ValueError):service.call({'op':'validate_candidates','candidates':[proposal]})
+    marked=dict(proposal,basis='external')
+    assert service.call({'op':'validate_candidates','candidates':[marked]})==[marked]
+
+def test_inference_can_summarize_admitted_parents_without_gaining_authority(service):
+    exp=finish(service,create(service),text='我偏好简洁回答')
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    parent=exp['governance']['versions'][-1]['version_id']
+    exp=finish(service,exp,text='总结已确认的偏好',candidates=[{'op':'derive','key':'summary','value':'偏好简洁表达','basis':'inference','parents':[parent]}])
+    with pytest.raises(ValueError):service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':False})
+    exp=service.call({'op':'decide','id':exp['id'],'revision':exp['revision'],'index':0,'confirm':True})
+    assert exp['snapshot']['current']['summary']['value']=='偏好简洁表达'
+    assert exp['governance']['versions'][-1]['parents']==[parent]
+
 def finish(s,exp,text='喜欢短回答',candidates=None):
     p=s.call({'op':'prepare','id':exp['id'],'revision':exp['revision'],'input':text,'request_id':'r'+str(exp['revision']),'model':{'name':'local','protocol':'openai','model':'test'}})
     return s.call({'op':'finish','id':exp['id'],'revision':p['revision'],'request_id':p['pending']['request_id'],'reply':'这是实际HTTP返回样本','usage':None,'candidates':candidates if candidates is not None else [{'op':'set','key':'preference','value':text}]})

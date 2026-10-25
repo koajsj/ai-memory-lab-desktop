@@ -174,12 +174,12 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 91852,
-      "sha256": "eb5ef1de35b6d5a4e1e874e23adb47d7cad4515f3407b0900cf9ce6fac7f0d3a"
+      "size": 92509,
+      "sha256": "4af47d3abc4f0742f898c7b23e1ee3ec1019b6a6e79c321a8240723228c0d3bf"
     },
     "tools/chat_archive.py": {
-      "size": 5508,
-      "sha256": "35bbbca874526a4eda13f1fc9683ed67764095f875c4abacaf955e6c44f220ea"
+      "size": 5626,
+      "sha256": "9089f7b1bb353b165dadf22a7c370d34b13c414e2d8a2014d519738bd42e4f84"
     },
     "tools/check_native_worker.py": {
       "size": 6450,

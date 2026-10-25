@@ -20,8 +20,15 @@ def create(s):
 
 def archive_file(tmp_path, messages, member='chat/export/session.json'):
     path=tmp_path/'conversation.zip'
+    # ZipInfo rewrites Windows separators on write; patch both headers to retain raw unsafe names.
+    stored_member=member.replace('\\','/')
     with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(member,json.dumps({'info':{'id':'session-1'},'messages':messages}))
+        archive.writestr(stored_member,json.dumps({'info':{'id':'session-1'},'messages':messages}))
+    if stored_member!=member:
+        raw=path.read_bytes()
+        encoded=stored_member.encode()
+        assert raw.count(encoded)==2, 'local and central ZIP member names must both be patched'
+        path.write_bytes(raw.replace(encoded,member.encode()))
     return path
 
 def archive_message(ident,role,at,parts,parent=None):
@@ -46,9 +53,13 @@ def test_chat_archive_groups_actual_messages_without_promoting_internal_parts(tm
     assert '不可展示' not in json.dumps(result,ensure_ascii=False)
 
 @pytest.mark.parametrize('member',[('../escape.json'),('/absolute.json'),('chat\\export\\session.json')])
-def test_chat_archive_rejects_unsafe_members(tmp_path,member):
+def test_chat_archive_rejects_unsafe_members(tmp_path,member,monkeypatch):
     path=archive_file(tmp_path,[archive_message('u1','user',1000,[{'type':'text','text':'输入'}])],member)
-    with pytest.raises(ValueError):inspect_chat_archive(path)
+    for separator,alternate in (('/',None),('\\','/')):
+        with monkeypatch.context() as environment:
+            environment.setattr(zipfile.os,'sep',separator)
+            environment.setattr(zipfile.os,'altsep',alternate)
+            with pytest.raises(ValueError):inspect_chat_archive(path)
 
 def test_chat_archive_rejects_bad_order_and_unknown_parent_without_partial_import(tmp_path):
     base=[archive_message('u1','user',1000,[{'type':'text','text':'输入'}]),

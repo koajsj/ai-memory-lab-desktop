@@ -35,9 +35,10 @@ def inspect_chat_archive(path):
                 _invalid('条目数或解压总量超限')
             names = set()
             for item in entries:
-                name = item.filename
+                # ZipInfo.filename can hide Windows separators or NUL suffixes on read.
+                name = item.orig_filename
                 parts = PurePosixPath(name).parts
-                if (not name or name in names or name.startswith('/') or '\\' in name
+                if (name != item.filename or not name or name in names or name.startswith('/') or '\\' in name
                         or any(part in ('.', '..') for part in parts)
                         or stat.S_ISLNK(item.external_attr >> 16)
                         or item.flag_bits & 1 or item.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)

@@ -22,7 +22,7 @@ python3 -B app/prepare-windows-ci.py --output /新的项目外目录/ai-memory-l
 
 1. Actions → **Windows native build** → **Run workflow**。
 2. Runner 使用 x64 Node 22、Python 3.12、Rust stable MSVC 和仓库锁文件。在隔离 venv 中安装 PyInstaller 6.16.0、hooks-contrib 2026.9、pytest 8.4.2；Windows SDK/MSVC 来自托管 Windows 镜像。
-3. 执行桌面服务定向测试、公开模拟数据的前端检查、原生网络适配器及 Credential Manager 合成凭据测试。两项仅针对比赛回放/提交文件的 Python 测试不属于私有构建集，仍保留在本地测试文件中。
+3. 执行桌面服务定向测试、公开模拟数据的前端检查、原生网络适配器及 Credential Manager 合成凭据测试。官方材料与真实日志不属于私有构建集。
 4. 在 Windows 重新运行 PyInstaller，检查原生 sidecar 的目标、输入哈希和文件哈希。限制 PATH 后验证独立进程、中文/空格目录、保存恢复、导出删除、取消及异常终止恢复。
 5. 运行现有 `npm --prefix app run desktop:windows`，产出 unsigned x64 NSIS；默认 WebView2 使用 embedBootstrapper：已有运行时可离线安装，缺失时联网下载；手动 Run workflow 勾选 offline_installer 可嵌入完整离线运行时。应用自身不要求评委安装 Python、Node 或开发工具。
 6. 只有此前步骤及安装包/载荷完整性检查全部成功，才上传私有 Artifact，保留14天。main 推送随后下载同一 Artifact，复核安装包、提交哈希和 SHA256SUMS，附上安装包与校验文件并创建带运行编号的私有 Release；不重复构建。下载需拥有私有仓库访问权限。
@@ -65,3 +65,20 @@ Runner 不会证明干净用户电脑缺少开发工具时的完整 UI 行为，
 候选保存前与最终裁决均检查字段和凭据；常见凭据形态及带语义的联系方式不落候选库。聊天输入检测到凭据时阻止发送和保存，原生层另核对当前配置的实际 Key；流式回复暂留未完成词元，凭据形态被识别后阻止继续展示和保存。未知格式、编码或语义敏感性不能由模式检查完全识别，发送前仍需最小化、脱敏。旧实验中发现不安全记录或内核／目录不一致时拒绝读取和导出，保留原库，不自动清空或修复。
 
 附带记忆按用户选择顺序在16,000字符的实际模型投影预算内取用（最多32项），保存实际版本、来源、状态与预算省略原因；近期聊天最多20个完整轮次、64,000字符，实际轮次及裁剪原因随请求登记。这里只支持当前／完成记忆准入，历史用途检索尚未实现。哈希和目录比对用于识别损坏、不完整保存与不同步，不抵抗可改写所有本地文件的攻击者。
+
+## Python 回归范围与本地定向检查
+
+保留两个测试文件。将同一校验入口的非法字段、风险观察和外部候选合并为共享状态的批量检查；将普通自述、复合表达和敏感候选复用初始化，仍逐项核对裁决、版本和持久化结果。缺少 basis 的两个入口、规则／记忆提示词隔离、普通自动保存和拒存的重复用例已归并；未删除唯一的失败回滚、并发、删除传播、来源或交付校验。
+
+| 文件 | 关键保障 |
+|---|---|
+| `tests/test_role_memory.py` | 自动保存与敏感提示顺序、纠正去重、获准指代、复合／否定／条件边界、SQLite 与 Markdown 读回、磁盘失败恢复、并发及防复活 |
+| `tests/test_desktop_service.py` | 候选结构与来源、角色／项目／用途、权限与隐私、上下文实际准入、事务回滚、损坏保护、兼容读取、原生进程诊断及内核打包契约 |
+
+本地优先按 node ID 运行受影响检查，例如：
+
+```sh
+python -B -m pytest -q -p no:cacheprovider tests/test_role_memory.py::test_task_suffix_is_not_part_of_the_task_title tests/test_role_memory.py::test_failed_markdown_publication_is_visible_and_restart_repairs_latest_commit
+```
+
+这些检查执行真实 Store／SQLite 与角色 Markdown；模型候选为合成数据，不代表真实模型的自然语言理解。任意指代、隐含反讽、无可信时间锚的相对日期，以及通用暂停／取消／恢复解析仍有局限。只有明确支持的完成表达转换状态，其他无法可靠解释的状态尾句不创建新任务。真实 API、TeleAgent 与 Windows 原生安装／交互须另验，本轮均为 NOT_RUN。CI 仍执行完整保留集、原生测试和安装包／SHA-256 门槛；本地定向通过不代替 CI。

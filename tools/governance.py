@@ -39,20 +39,33 @@ class Evidence:
     conversation_id:str='local'
 
 class Governance:
-    def automatic_admission(self,ctx,candidate,utterance):
+    def extract_direct(self,ctx,utterance,*,memory_versions=None):
+        """Local clauses may use only current context-admitted facts from this role/scope."""
+        from .role_memory import direct_statements
+        if not self.allowed(ctx,ctx.role,'write') or not self.allowed(ctx,ctx.role,'read'):return []
+        admitted=self.retrieve_for_context(ctx,ctx.role,today=date.today().isoformat())
+        records=admitted['memories']
+        if memory_versions is not None:records=[r for r in records if r['version_id'] in memory_versions]
+        return direct_statements(utterance,memories=records)
+
+    def automatic_admission(self,ctx,candidate,utterance,*,memory_versions=None):
         """Conservative direct-statement gate; model labels and matched quotes alone are not authority."""
         from .engine import personal_kind,unsafe_fact
-        from .role_memory import direct_statements
-        direct=direct_statements(utterance)
+        direct=self.extract_direct(ctx,utterance,memory_versions=memory_versions)
         personal=personal_kind(candidate.get('value','')) or (candidate.get('key','').startswith('personal_background_') and 'background')
-        if personal:
-            matched=next((c for c in direct if (c['key']==candidate.get('key') or c['key'].startswith('personal_background_') and re.fullmatch(r'personal_background_[1-9][0-9]*',candidate.get('key',''))) and c['value']==candidate.get('value') and c['evidence']==candidate.get('evidence')),None)
-            if not matched or candidate.get('basis')!='self_report' or candidate.get('op')!='set':return 'manual'
-            if set(candidate)-set(matched)-{'privacy','state'} or candidate.get('state','current')!='current' or candidate.get('privacy','restricted') not in ('private','restricted'):return 'manual'
+        matched=next((c for c in direct if (c['key']==candidate.get('key') or c['key'].startswith('personal_background_') and re.fullmatch(r'personal_background_[1-9][0-9]*',candidate.get('key',''))) and c.get('value')==candidate.get('value') and c['evidence']==candidate.get('evidence')),None)
+        if matched and candidate.get('basis')=='self_report' and candidate.get('op')=='set':
+            # Every supplied semantic flag must agree with locally interpreted source, not model authority.
+            if set(candidate)-set(matched)-{'privacy','state','kind'} or any(candidate.get(k)!=v for k,v in matched.items() if k not in ('key','value','evidence','basis','op')):return 'manual'
+            if candidate.get('state',matched.get('state','current'))!=matched.get('state','current') or candidate.get('kind',matched.get('kind','fact'))!=matched.get('kind','fact'):return 'manual'
+            if candidate.get('privacy','restricted' if personal else 'private') not in (('private','restricted') if personal else ('private',)):return 'manual'
+            if not personal and (unsafe_fact(candidate) or personal_kind(candidate)):return 'manual'
             if not self.allowed(ctx,ctx.role,'write') or self.db.execute('SELECT 1 FROM tombstones WHERE role=? AND key=?',(ctx.role,candidate['key'])).fetchone():return 'manual'
-            old=self.read(ctx,ctx.role)['current'].get(candidate['key'])
-            if old and old['value']!=candidate['value'] and not matched.get('current_correction'):return 'manual'
+            current=self.read(ctx,ctx.role)
+            old=current['current'].get(candidate['key']) or current['completed'].get(candidate['key'])
+            if old and old['value']!=candidate['value'] and not matched.get('current_correction') and matched.get('state')!='completed':return 'manual'
             return 'auto_merge' if old and old['value']==candidate['value'] else 'auto_update' if old else 'auto_save'
+        if personal:return 'manual'
         if candidate.get('op')!='set' or candidate.get('basis')!='self_report':return 'manual'
         if set(candidate)-{'op','key','value','basis','evidence','state','privacy','kind','current_correction','archive_old'}:return 'manual'
         if candidate.get('state','current')!='current' or candidate.get('privacy','private')!='private':return 'manual'
@@ -64,10 +77,10 @@ class Governance:
         if (not isinstance(proof,dict) or proof.get('source')!='current_input'
                 or proof.get('quote')!=utterance.strip() or len(utterance)>300
                 or candidate.get('value','') not in utterance
-                or re.search(r'[“”"\'「」?？;；\n]|(?:不要|别|无需|不用)(?:记住|记|保存|存入|写入)|忘记|删除',utterance)):
+                or re.search(r'[“”"\'「」?？;；\n]|(?:不要|别|无需|不用)(?:记住|记|保存|存入|写入)|忘记|删除|可能|也许|据说|听说|假设|开玩笑|反话|反讽',utterance)):
             return 'manual'
-        direct=re.fullmatch(r'(?:更正[:：]\s*)?(?:请记住)?(?:我(?:偏好|喜欢|习惯|计划|决定|是|的项目|的目标|的长期|正在开发|现在偏好|现在喜欢)|请以后|以后请|今后请|从现在起请).+',utterance.strip())
-        if not direct:return 'manual'
+        direct=re.fullmatch(r'(?:更正[:：]\s*)?(?:请记住)?(?:我(?:偏好|喜欢|习惯|计划|决定|是|的项目|的目标(?:是)?|的长期|正在开发|现在偏好|现在喜欢)|请以后|以后请|今后请|从现在起请)(.+)',utterance.strip())
+        if not direct or candidate.get('value') not in (utterance.strip(),direct[1]):return 'manual'
         if not self.allowed(ctx,ctx.role,'write'):return 'manual'
         if self.db.execute('SELECT 1 FROM tombstones WHERE role=? AND key=?',(ctx.role,candidate['key'])).fetchone():return 'manual'
         current=self.read(ctx,ctx.role)

@@ -7,39 +7,79 @@ import re
 import tempfile
 
 
-def direct_statements(text):
-    """Small offline extractor, not general semantic understanding or historical execution evidence."""
+def direct_statements(text, *, memories=()):
+    """Bounded local parsing, preserving exact clauses; unresolved references are not inferred."""
     from .engine import forbidden_personal, personal_kind
     out=[]
-    # Explicit external containers never become owner statements merely because a line starts with I/我.
-    if re.search(r'(?:^|\n)\s*(?:(?:请)?(?:分析|总结|翻译|阅读|检查|解释).{0,20})?(?:以下(?:内容|资料|文本)|外部资料|引用(?:内容|文本)?|转发(?:内容)?|第三方(?:消息)?|网页|邮件|短信|文档|日志|工具输出|quoted text|forwarded message)\s*[:：]',text,re.I):return out
-    # Quoted/forwarded material cannot grant direct-source authority. Other independent sentences remain usable.
-    for raw in re.split(r'[。！？!?；;\n]+',text):
-        sentence=raw.strip()
-        correction=bool(re.match(r'^(?:更正|纠正)[:：]',sentence))
-        sentence=re.sub(r'^(?:更正|纠正)[:：]\s*','',sentence)
-        deletion=re.fullmatch(r'(?:请)?(?:删除|忘记)(?:我的?)?(健康(?:信息|记忆)?|诊断|住址|地址|联系方式|手机号|家庭(?:信息|记忆)?|personal_(?:health|address|contact|family)|preference)(?:。)?',sentence)
+    # An external container taints its remaining body, not independent owner statements before it.
+    external=re.search(r'(?:^|[。！？!?；;\n])\s*(?:(?:请)?(?:分析|总结|翻译|阅读|检查|解释).{0,20})?(?:以下(?:内容|资料|文本)|外部资料|引用(?:内容|文本)?|转发(?:内容)?|第三方(?:消息)?|网页|邮件|短信|文档|日志|工具输出|quoted text|forwarded message)\s*[:：]',text,re.I)
+    if external:text=text[:external.start()]
+    # Split commas only before an explicit new subject, retaining conditions and correction complements.
+    clauses=[]
+    for clause in re.split(r'(?<=[。！？!?；;\n])',text):
+        if clause.rstrip().endswith(('?','？')):continue
+        clause=clause.strip().rstrip('。！!；;\n')
+        clauses.extend([clause] if re.match(r'^(?:(?:更正|纠正)[:：]\s*)?(?:如果|只有|当)',clause.strip()) else
+                       re.split(r'[，,]\s*(?=(?:更正[:：]|纠正[:：]|我(?:的|偏好|不喜欢|喜欢|习惯|计划)))',clause))
+    for raw in clauses:
+        quote=raw.strip()
+        correction=bool(re.match(r'^(?:更正|纠正)[:：]',quote))
+        sentence=re.sub(r'^(?:更正|纠正)[:：]\s*','',quote)
+        # Resolve only a bounded task reference against current admitted direct facts, never summaries.
+        if sentence in ('这项任务已完成','该任务已完成'):
+            tasks=[r for r in memories if r['part']=='current' and r['payload'].get('kind')=='task'
+                   and not r['parents'] and any(x['source_kind']=='owner_direct' for x in r['source'])]
+            if len(tasks)!=1:continue
+            task=tasks[0];title=re.fullmatch(r'我的任务是(.+)',task['payload']['value'])
+            if not title:continue
+            out.append(dict(op='set',key=task['key'],value='我的任务'+title[1]+'已完成',kind='task',state='completed',
+                            basis='self_report',evidence=dict(source='current_input',quote=quote)))
+            continue
+        deletion=re.fullmatch(r'(?:请)?(?:删除|忘记)(?:我的?)?(健康(?:信息|记忆)?|诊断|住址|地址|联系方式|手机号|家庭(?:信息|记忆)?|personal_(?:health|address|contact|family)|preference)',sentence)
         if deletion:
             name=deletion[1];key=name if name.startswith('personal_') or name=='preference' else 'personal_'+('health' if name.startswith('健康') or name=='诊断' else 'address' if name in ('住址','地址') else 'contact' if name in ('联系方式','手机号') else 'family')
-            out.append(dict(op='delete',key=key,basis='self_report',evidence=dict(source='current_input',quote=raw.strip())))
+            out.append(dict(op='delete',key=key,basis='self_report',evidence=dict(source='current_input',quote=quote)))
             continue
         if (not sentence or len(sentence)>500 or forbidden_personal(sentence)
-                or re.search(r'[“”"\'「」]|(?:不要|别|无需|不用)(?:记住|记|保存|存入|写入)|忘记|删除',sentence)
-                or not re.match(r'^(?:请记住)?(?:我(?:的|偏好|喜欢|习惯|计划|决定|是|住在|患有|确诊|现在|叫|在|从|于|今年|目前|最近|刚|已经|还|已|要|准备|打算|希望|需要|会|能|有|负责|就职|从事|每天|每周|周末)|My |I (?:prefer|live at|have been diagnosed|suffer from))',sentence,re.I)):
+                or re.search(r'[“”"\'「」]|(?:不要|别|无需|不用)(?:记住|记|保存|存入|写入)|忘记|删除|可能|也许|据说|听说|开玩笑|反话|反讽',sentence)):
             continue
+        # Keep conditional preferences/plans as conditional statements, never assert their fulfilment.
+        subject=sentence
+        if re.match(r'^(?:如果|只有|当).+[，,]我(?:计划|偏好|喜欢)',sentence):
+            subject=re.split(r'[，,](?=我)',sentence,maxsplit=1)[1]
+        if not re.match(r'^(?:请记住)?(?:我(?:的|不喜欢|不再(?:偏好|喜欢)|偏好|喜欢|习惯|计划|决定|是|住在|患有|确诊|现在|叫|在|从|于|今年|目前|最近|刚|已经|还|已|要|准备|打算|希望|需要|会|能|有|负责|就职|从事|每天|每周|周末)|My |I (?:prefer|live at|have been diagnosed|suffer from))',subject,re.I):
+            continue
+        correction=correction or bool(re.match(r'^我(?:现在(?:偏好|喜欢)|不再(?:偏好|喜欢))',sentence))
         category=personal_kind(sentence)
         key='personal_'+category if category else next((key for pattern,key in (
-            (r'^我(?:现在)?(?:偏好|喜欢)','preference'),(r'^我习惯','habit'),
-            (r'^我的目标','goal'),(r'^我的项目','project'),(r'^我计划','plan'),
-            (r'^我正在','progress')) if re.search(pattern,sentence)),None)
-        # Unclassified direct statements remain verbatim restricted notes, not inferred objective facts.
+            (r'^我(?:现在)?(?:不喜欢|不再(?:偏好|喜欢)|偏好|喜欢)','preference'),(r'^I prefer','preference'),
+            (r'^我习惯','habit'),(r'^我的目标','goal'),(r'^我的项目','project'),
+            (r'^我计划','plan'),(r'^我正在','progress')) if re.search(pattern,subject,re.I)),None)
+        project=re.match(r'^我的项目(.+?)(?:使用|采用|选择)',sentence)
+        if project:key='project_'+hashlib.sha256(project[1].strip().encode()).hexdigest()[:12]
+        fields={}
+        task_sentence='我的任务'+sentence[len('我的任务是'):] if sentence.startswith('我的任务是') else sentence
+        completed=re.fullmatch(r'我的任务([^，,]+?)(?:[，,]\s*)?已完成',task_sentence)
+        task=completed or re.fullmatch(r'我的任务是([^，,]+)',sentence)
+        if task:
+            title=task[1].strip()
+            # Do not turn unresolved status clauses or negated completion into a new title.
+            if (completed and re.search(r'(?:并非|不是|没有|不|未|没)$',title)
+                    or not completed and re.search(r'(?:已完成|已取消|已暂停|暂时不做|(?:尚|并)?未完成)$',title)):
+                continue
+            key='task_'+hashlib.sha256(title.encode()).hexdigest()[:12]
+            fields=dict(kind='task',state='completed' if completed else 'current')
+            if completed:sentence='我的任务'+title+'已完成'
+        elif sentence.startswith('我的任务'):continue  # Unsupported lifecycle wording must not become unrelated background.
         if not key:key='personal_background_'+str(len(out)+1)
         out.append(dict(op='set',key=key,value=sentence,basis='self_report',
-                        evidence=dict(source='current_input',quote=raw.strip()),
+                        evidence=dict(source='current_input',quote=quote),**fields,
                         **(dict(current_correction=True,archive_old=True) if correction else {})))
-    # Different values of the same field in one message stay unresolved, never last-write-wins.
-    counts={c['key']:sum(x['key']==c['key'] for x in out) for c in out}
-    return [c for c in out if counts[c['key']]==1]
+    # Identical clauses merge. Different values of one field remain unresolved, not last-write-wins.
+    unique={}
+    for c in out:unique.setdefault((c['key'],c.get('value'),c['op']),c)
+    counts={c['key']:sum(x['key']==c['key'] for x in unique.values()) for c in unique.values()}
+    return [c for c in unique.values() if counts[c['key']]==1]
 
 
 def render_memory(state):

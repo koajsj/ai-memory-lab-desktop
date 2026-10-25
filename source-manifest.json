@@ -174,24 +174,24 @@
       "sha256": "181ff6d29ff5f75ce625d925baed63efea2b17cf068eea536a8b0f571dc71c09"
     },
     "docs/windows-delivery.md": {
-      "size": 10313,
-      "sha256": "26eeddaee0b84ac723db2b71522e8dd21adc0d6824c78f7d8b24d1bc1ed38b86"
+      "size": 12053,
+      "sha256": "3573b1f0c692eb46f22bba6f07b4f81af2c14142439ae5a38850d77244112e05"
     },
     "memory-rules.md": {
-      "size": 26613,
-      "sha256": "4f58df5d67ef4c5975ff41fc62f94dd8a4c6d36a69a8f9f1cf245a2006903e99"
+      "size": 27317,
+      "sha256": "e36c60cc2a338f9550709b9f7fdb053f9ce015350921ecb558bd13a01798b4bc"
     },
     "requirements-dev.txt": {
       "size": 77,
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 92599,
-      "sha256": "de7443fabee3f8ef0567f7622cf21ed86f828e15f1d96a4989f3f4a3eb14b931"
+      "size": 88065,
+      "sha256": "76983913a2497539380332c93792df6a7133647b800496fe526936e3ec51d68f"
     },
     "tests/test_role_memory.py": {
-      "size": 11602,
-      "sha256": "891712ebaaf72958d02716fb1e8ff617e37464d8b0119c834d845b6848b18d9b"
+      "size": 27825,
+      "sha256": "77829d2c9942b83da9a1008e7ba8b92b622630d979b0f136445b57584d543f69"
     },
     "tools/chat_archive.py": {
       "size": 5626,
@@ -206,24 +206,24 @@
       "sha256": "411317bd9bce1909c72d4f367157e34179721f3aeb219f53cefb9865b29449c7"
     },
     "tools/desktop_service.py": {
-      "size": 63823,
-      "sha256": "f68aa75cc840d3a8122d02e0febabcda36ae9bb3e6dd3c09ee630e084f425eda"
+      "size": 64217,
+      "sha256": "5bc0467e095891ba45675a4b76a40d7d69360e61010c0da87989dd416f61f292"
     },
     "tools/engine.py": {
       "size": 32396,
       "sha256": "28e25833acf4b7174e6d35b0d97d3076d3aedd31f82e5e67c992e82fd83bf5da"
     },
     "tools/governance.py": {
-      "size": 36487,
-      "sha256": "11fe2eabf6cf3e94c78ba8641e3d09a338ac3f0479f35204faf617ccf402a528"
+      "size": 37901,
+      "sha256": "d5a0115cecaea89577a1c92a4457b6ae288f6388bed4a3d897282ec76118099c"
     },
     "tools/json_input.py": {
       "size": 450,
       "sha256": "0a1bab1aec5dd040789a7c3b95898f62cd96987f5bfe908db767423cd830c12f"
     },
     "tools/role_memory.py": {
-      "size": 7308,
-      "sha256": "3d8cac99aa06af3f0e863423b8c0dd75064dbcaaac25f9eecb11cecb5a2d5f69"
+      "size": 10378,
+      "sha256": "b52c4c60f23a9764224602eecb96d931fbfe516d00321350e5dcf3c2c83c7d67"
     }
   }
 }

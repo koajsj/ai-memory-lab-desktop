@@ -312,14 +312,28 @@ pub async fn import_chat_archive(
             .as_nanos()
     );
     let mut paths = state.archives.lock().map_err(|_| "会话状态不可用")?;
-    paths.clear();
+    if let Some((existing, _)) = paths.iter().find(|(_, saved)| **saved == path) {
+        archive["archive_token"] = json!(existing);
+        return Ok(Some(archive));
+    }
+    if paths.len() >= 8 {
+        return Err("会话预览已达上限，请先清除浏览".into());
+    }
     paths.insert(token.clone(), path);
     archive["archive_token"] = json!(token);
     Ok(Some(archive))
 }
 #[tauri::command]
-pub fn forget_chat_archive(state: tauri::State<'_, Runtime>) -> Result<(), String> {
-    state.archives.lock().map_err(|_| "会话状态不可用")?.clear();
+pub fn forget_chat_archive(
+    state: tauri::State<'_, Runtime>,
+    archive_token: Option<String>,
+) -> Result<(), String> {
+    let mut paths = state.archives.lock().map_err(|_| "会话状态不可用")?;
+    if let Some(token) = archive_token {
+        paths.remove(&token);
+    } else {
+        paths.clear();
+    }
     Ok(())
 }
 #[tauri::command]

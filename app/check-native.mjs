@@ -5,6 +5,15 @@ const require=createRequire(import.meta.url);globalThis.MemoryModel=require('./m
 const demo=require('./src/public-demo.json');
 const withHash=structuredClone(demo);withHash.data.policy.sha256='a'+'1234567890123'+'b'.repeat(50);if(withHash.policy)withHash.policy.sha256=withHash.data.policy.sha256;assert.equal(globalThis.MemoryModel.adapt(withHash).data.policy.sha256,withHash.data.policy.sha256);
 const secret=structuredClone(withHash);secret.data.frames[0].input='1234567890123';assert.throws(()=>globalThis.MemoryModel.adapt(secret),/敏感/);
+// Source edges must be grounded in archive IDs, never inferred from visible text.
+const sourceArchive={sha256:'a'.repeat(64),session_id:'session-1',counts:{batches:1},batches:[{number:1,
+ user:{id:'u1',parent_id:null,role:'user',text:'安全输入',time:'2026-01-01',sequence:1,parts:{text:1}},
+ assistant:[{id:'a1',parent_id:'u1',role:'assistant',text:'',time:'2026-01-01',sequence:2,parts:{tool:1}}]}]};
+const originalGraph=globalThis.MemoryModel.archiveGraph(sourceArchive,0);
+assert.equal(originalGraph.nodes.length,3);assert.equal(originalGraph.edges.filter(e=>e.type==='PARENT').length,1);
+assert.equal(originalGraph.nodes.find(n=>n.message?.id==='a1').payload.value,'本条无可展示文字');
+assert(originalGraph.edges.every(e=>originalGraph.nodes.some(n=>n.id===e.from)&&originalGraph.nodes.some(n=>n.id===e.to)));
+assert.equal(globalThis.MemoryModel.archiveGraph(sourceArchive,0,{messageRole:'user'}).nodes.some(n=>n.message?.role==='assistant'),false);
 const {runner,extracted,ruleDraft,scriptDraft,answerComparison}=require('./native-ui.js');
 if(existsSync(new URL('../tools/desktop_service.py',import.meta.url))){
  const builtinText=await readFile(new URL('../memory-rules.md',import.meta.url),'utf8');
@@ -94,19 +103,37 @@ class El {
 }
 let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfileKey;let failFinish=false,failOpen=false,loseDecideReply=false,imported=null,archiveImport=null;
 const preferences=new Map(),windowEvents={};let sampleData=null;
+const forgottenArchives=[];
 let lastPrepared;
 const service=q=>{const value=JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;if(q.op==='prepare')lastPrepared=value;return value;};
 const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},setCatalog(){this.catalogResets=(this.catalogResets||0)+1;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
 const timers=new Map();let timerId=0;
-const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
+const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.destroyed=false;graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
  if(command==='import_rules'){if(imported instanceof Error)throw imported;return imported;}
- if(command==='import_chat_archive'){if(archiveImport instanceof Error)throw archiveImport;return archiveImport;}
+ if(command==='import_chat_archive'){
+  if(archiveImport instanceof Error)throw archiveImport;
+  if(archiveImport?.archive_token==='fixture-only'){
+   const script=`import json,zipfile,sys
+from tools.chat_archive import inspect_chat_archive
+a=json.loads(sys.stdin.read());messages=[]
+for b in a['batches']:
+ for m,role in [(b['user'],'user')]+[(x,'assistant') for x in b['assistant']]:
+  info=dict(id=m['id'],sessionID=a['session_id'],role=role,time=dict(created=len(messages)+1000))
+  if role=='assistant':info['parentID']=b['user']['id']
+  messages.append(dict(info=info,parts=[dict(type='text',text=m['text'])]))
+with zipfile.ZipFile(sys.argv[1],'w') as z:z.writestr('chat/export/synthetic.json',json.dumps(dict(info=dict(id=a['session_id']),messages=messages)))
+print(json.dumps(inspect_chat_archive(sys.argv[1])))`;
+   archiveImport={...JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-c',script,path.join(folder,'synthetic.zip')],{cwd:rootDir,input:JSON.stringify(archiveImport),encoding:'utf8'})),archive_token:'fixture-only'};
+  }
+  return archiveImport;
+ }
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report',evidence:{source:'current_input',quote:JSON.parse(args.messages[0].content).input}}],assessment}),usage:null};}
- if(command==='cancel_model'||command==='forget_chat_archive')return;
- if(command==='replay_archive_batch')return service({op:'ingest',id:args.id,revision:args.revision,input:archiveImport.batches[args.batch-1].user.text,request_id:'fixture-replay-'+args.batch,replay_source:{sha256:args.sha256,batch:args.batch}});
+ if(command==='forget_chat_archive'){forgottenArchives.push(args.archiveToken);return;}
+ if(command==='cancel_model')return;
+ if(command==='replay_archive_batch')return service({op:'replay_batch',id:args.id,revision:args.revision,path:path.join(folder,'synthetic.zip'),batch:args.batch,sha256:args.sha256,adopt_user_messages:args.adoptUserMessages});
  throw Error('Unexpected command '+command);
  }}}};
 try{
@@ -120,14 +147,30 @@ try{
  await e('help').click();for(let i=0;i<4;i++){await e('guide-action').click();await e('guide-next').click();}assert.equal(e('guide').hidden,true);
  assert.equal(requests,0,'help must never call a model');assert.equal(service({op:'list'}).length,0,'help must not create experiments');
  await e('archive-view').click();assert.equal(e('archive-panel').hidden,false);
- archiveImport={format:'memory-lab.chat-archive.v1',name:'synthetic.zip',sha256:'a'.repeat(64),
+ assert.equal(e('archive-next').disabled,true,'empty archive cannot navigate');
+ assert.equal(e('archive-graph').disabled,true,'empty archive cannot open a graph');
+ archiveImport={format:'memory-lab.chat-archive.v1',session_id:'synthetic-session',archive_token:'accepted-one',name:'synthetic.zip',sha256:'a'.repeat(64),
   counts:{batches:2,messages:4,user:2,assistant:2,assistant_with_text:2},
-  batches:[{number:1,user:{time:'2026-01-01T00:00:00+00:00',text:'第一批用户输入'},assistant:[{time:'2026-01-01T00:00:01+00:00',text:'第一批回复'}]},
-           {number:2,user:{time:'2026-01-02T00:00:00+00:00',text:'第二批用户输入'},assistant:[{time:'2026-01-02T00:00:01+00:00',text:'第二批回复'}]}]};
- await e('archive-import').click();assert.equal(e('archive-list').children.length,2);
+  batches:[{number:1,user:{id:'u1',role:'user',time:'2026-01-01T00:00:00+00:00',text:'第一批用户输入'},assistant:[{id:'a1',role:'assistant',parent_id:'u1',time:'2026-01-01T00:00:01+00:00',text:'第一批回复'}]},
+           {number:2,user:{id:'u2',role:'user',time:'2026-01-02T00:00:00+00:00',text:'第二批用户输入'},assistant:[{id:'a2',role:'assistant',parent_id:'u2',time:'2026-01-02T00:00:01+00:00',text:'第二批回复'}]}]};
+ await e('archive-import').click();assert.equal(e('archive-accept').hidden,false);assert.equal(e('archive-graph').disabled,true,'preview cannot open an accepted-source graph');await e('archive-accept').click();assert.equal(e('archive-replay').disabled,true,'role experiment is required for replay');assert.equal(e('archive-list').children.length,2);
+ await e('archive-import').click();assert.equal(e('archive-accept').hidden,true);assert.equal(e('archive-list').children.length,2,'same SHA must not duplicate browsing records');
  await e('archive-list').children[1].click();assert(e('archive-detail').children.some(x=>x.textContent==='第二批用户输入'));
  archiveImport=null;await e('archive-import').click();assert.equal(e('archive-list').children.length,2,'cancel preserves the imported archive');
  assert.equal(requests,0);assert.equal(service({op:'list'}).length,0,'archive viewing must not create experiments');
+ e('archive-search').value='第一批';await e('archive-search').oninput();assert(e('archive-detail').children.some(x=>x.textContent==='第一批用户输入'),'search locates a matching batch');assert.equal(e('archive-next').disabled,true,'navigation follows the filtered batches');
+ e('archive-search').value='不存在的消息';await e('archive-search').oninput();assert.equal(e('archive-list').children.length,0);assert.equal(e('archive-previous').disabled,true);assert.equal(e('archive-next').disabled,true);assert(e('archive-detail').children.some(x=>x.textContent==='没有匹配的消息。'));
+ e('archive-search').value='';await e('archive-search').oninput();await e('archive-previous').click();assert(e('archive-detail').children.some(x=>x.textContent==='第一批用户输入'));
+ await e('archive-next').click();assert(e('archive-detail').children.some(x=>x.textContent==='第二批用户输入'));
+ archiveImport={format:'memory-lab.chat-archive.v1',session_id:'other',archive_token:'preview-two',name:'other.zip',sha256:'c'.repeat(64),counts:{batches:1,messages:1,user:1,assistant:0,assistant_with_text:0},batches:[{number:1,user:{id:'other-u',role:'user',text:'仅预览，不能覆盖',time:'2026-01-01'},assistant:[]}]};
+ await e('archive-import').click();assert.equal(e('archive-list').children.length,1);await e('archive-reject').click();assert.equal(e('archive-list').children.length,2);assert(forgottenArchives.includes('preview-two'));
+ await e('archive-import').click();await e('archive-accept').click();assert(forgottenArchives.includes('accepted-one'),'replacing accepted archive releases its native source handle');
+ archiveImport={...sourceArchive,format:'memory-lab.chat-archive.v1',archive_token:'accepted-one',name:'synthetic.zip',counts:{batches:1,messages:2,user:1,assistant:1,assistant_with_text:0}};await e('archive-import').click();await e('archive-accept').click();
+ archiveImport=new Error('会话ZIP格式无效');await e('archive-import').click();assert.equal(e('archive-list').children.length,1);assert(e('status').textContent.includes('格式无效'));
+ await e('archive-graph').click();assert.equal(e('memory-heading').textContent,'原始消息');assert.equal(graphInstance.model.nodes.length,3);assert.equal(graphInstance.model.edges.filter(x=>x.type==='PARENT').length,1);
+ await e('graph-view').click();assert.equal(graphInstance.model.nodes.length,0,'empty memory view cannot retain archive nodes');
+ await e('archive-view').click();assert.equal(service({op:'list'}).length,0);
+
  await e('archive-clear').click();assert.equal(e('archive-list').children.length,0);
  await e('start-view').click();
  e('name').value='最小DOM实验';await e('new').click();assert.equal(service({op:'list'}).length,1);
@@ -345,13 +388,26 @@ try{
  assert.equal(e('input').value,'');assert.equal(e('live').children.length,0);assert.equal(e('live').hidden,true);
  // Explicit ZIP adoption creates a new role-scoped local replay, never a model request or historical answer.
  const beforeReplayCalls=requests;
- archiveImport={format:'memory-lab.chat-archive.v1',archive_token:'fixture-only',name:'synthetic.zip',sha256:'b'.repeat(64),counts:{batches:2,messages:2,user:2,assistant:0,assistant_with_text:0},batches:[
-  {number:1,user:{time:'2026-01-01',text:'我的诊断是季节性过敏'},assistant:[]},
-  {number:2,user:{time:'2026-01-02',text:'请删除我的健康信息'},assistant:[]}]};
- await e('archive-import').click();await e('archive-replay').click();
+ archiveImport={format:'memory-lab.chat-archive.v1',archive_token:'fixture-only',session_id:'synthetic-session',name:'synthetic.zip',sha256:'b'.repeat(64),counts:{batches:2,messages:2,user:2,assistant:0,assistant_with_text:0},batches:[
+  {number:1,user:{id:'user-one',time:'2026-01-01',text:'我的诊断是季节性过敏'},assistant:[]},
+  {number:2,user:{id:'user-two',time:'2026-01-02',text:'请删除我的健康信息'},assistant:[]}]};
+ await e('archive-import').click();await e('archive-accept').click();await e('archive-replay').click();
  const replayId=e('experiments').value,replayed=service({op:'open',id:replayId});
  assert.equal(replayed.frames.length,2);assert.equal(replayed.turns[0].processing,'REEXECUTED_LOCAL');assert.equal(replayed.turns[0].reply,null);
  assert.equal(replayed.snapshot.current.personal_health,undefined);assert.equal(requests,beforeReplayCalls);
+ const replayGraph=globalThis.MemoryModel.reexecutionGraph(replayed,1);
+ assert(replayGraph.nodes.some(n=>n.nodeType==='message'&&n.origin.message_id==='user-one'));
+ assert(replayGraph.edges.some(e=>e.type==='SOURCE'));
+ assert(replayGraph.nodes.some(n=>n.nodeType==='event'));
+ assert(replayGraph.nodes.filter(n=>n.nodeType==='memory').every(n=>n.payload===null||!String(n.payload.value).includes('季节性过敏')),'deletion must not be undone by source graph');
+ assert(replayGraph.edges.every(e=>e.from.startsWith('role:')||replayGraph.nodes.some(n=>n.id===e.from)));
+ await e('graph-view').click();assert(graphInstance.model.nodes.some(n=>n.nodeType==='message'));
+ const sourceNode=graphInstance.model.nodes.find(n=>n.nodeType==='message');graphInstance.options.onSelect(sourceNode.id);
+ await e('details').children.find(n=>n.tag==='button').click();assert.equal(e('archive-panel').hidden,false);
+ await e('archive-graph').click();assert.equal(e('graph').hidden,false);assert(graphInstance.model.rootLabel.includes('只读'),e('status').textContent);
+ e('position').value='0';await e('position').oninput();assert.equal(e('round').textContent,'原始批次 1 / 2');
+ await e('graph-view').click();e('position').value='1';await e('position').oninput();
+
  assert.equal(e('position').value,'1');assert.equal(e('workspace').hidden,false);
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);

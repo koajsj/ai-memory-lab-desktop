@@ -267,6 +267,49 @@
     }
     return {nodes,edges,count:factCount};
   }
+  // Original archive topology is evidence, not a memory snapshot or role authorization.
+  function archiveGraph(archive,index,{messageRole='all'}={}){
+    const session='session:'+archive.sha256+'/'+archive.session_id,nodes=[{id:session,key:session,label:'原始会话',state:'history',nodeType:'session',payload:{value:'只读历史记录；未核验历史记忆状态'}}],edges=[];
+    const messages=archive.batches.slice(0,index+1).flatMap(b=>[b.user,...b.assistant].map(message=>({message,batch:b.number})));
+    const ids=new Map(messages.map(x=>[x.message.id,'message:'+archive.sha256+'/'+archive.session_id+'/'+x.message.id]));
+    for(const {message,batch}of messages){
+      if(messageRole!=='all'&&message.role!==messageRole)continue;
+      const id=ids.get(message.id);
+      nodes.push({id,key:id,label:`${message.role==='user'?'用户':'助手'} · 批次 ${batch}`,state:'history',nodeType:'message',message,batch,
+        origin:{sha256:archive.sha256,session_id:archive.session_id,message_id:message.id,batch},payload:{value:message.text||'本条无可展示文字'}});
+      edges.push({from:session,to:id,type:'CONTAINS'});
+      if(ids.has(message.parent_id))edges.push({from:ids.get(message.parent_id),to:id,type:'PARENT'});
+    }
+    const visible=new Set(nodes.map(n=>n.id));return {nodes,edges:edges.filter(e=>visible.has(e.from)&&visible.has(e.to)),count:nodes.length-1,rootLabel:'原始会话 · 只读'};
+  }
+  function reexecutionGraph(exp,index,{state='all',nodeType='all',messageRole='all',event='all'}={}){
+    const m=graph({role:exp.role,data:{frames:exp.frames}},index,{state,includeVersions:true});
+    for(const n of m.nodes)n.nodeType='memory';
+    const turns=exp.turns.slice(0,index+1),origins=new Map();
+    for(const [i,t]of turns.entries())if(t.processing==='REEXECUTED_LOCAL'&&t.replay_source?.message_id){
+      const s=t.replay_source,id='message:'+s.sha256+'/'+s.session_id+'/'+s.message_id;
+      origins.set(i+1,{...s,id});
+      m.nodes.push({id,key:id,label:'用户来源 · 批次 '+s.batch,state:'history',nodeType:'message',message:{id:s.message_id,role:'user'},
+        origin:s,round:i+1,payload:{value:'重新治理的原始来源标识；导入同一 ZIP 可查看遮蔽后的原文'}});
+    }
+    for(const n of m.nodes.filter(n=>n.nodeType==='memory'))for(const source of n.evidence?.source||[]){
+      const origin=origins.get(source.source_turn);if(origin)m.edges.push({from:origin.id,to:n.id,type:'SOURCE'});
+    }
+    const seen=new Set();
+    for(const [i,f]of exp.frames.slice(0,index+1).entries())for(const a of f.governance?.audit||[]){
+      if(seen.has(a.id))continue;seen.add(a.id);
+      if(!origins.has(i+1)||event!=='all'&&a.operation!==event)continue;
+      const id='audit:'+exp.id+'/'+a.id,origin=origins.get(i+1);
+      m.nodes.push({id,key:id,label:a.operation+' · 第 '+(i+1)+' 轮',state:'history',nodeType:'event',round:i+1,audit:a,frameDecisions:f.decisions,origin,
+        payload:{value:`内核审计 ${a.operation} · ${a.relation} · ${a.timestamp}`}});
+      m.edges.push({from:origin.id,to:id,type:'GOVERNANCE'});
+      const target=m.nodes.find(n=>n.evidence?.version_id===a.version_id);
+      if(target)m.edges.push({from:id,to:target.id,type:'AFFECTS'});
+    }
+    m.nodes=m.nodes.filter(n=>(nodeType==='all'||n.nodeType===nodeType)&&(messageRole==='all'||n.nodeType!=='message'||n.message.role===messageRole));
+    const ids=new Set(m.nodes.map(n=>n.id));m.edges=m.edges.filter(e=>ids.has(e.to)&&(ids.has(e.from)||e.from==='role:'+exp.role));
+    return {...m,rootLabel:'REEXECUTED_LOCAL · '+exp.role};
+  }
   // 只投影当前帧；不从旧轮次补原值，也不把轮级理由伪装成逐字段因果。
   function roundView(ds,index,{privateVisible=true}={}){
     const f=ds.data.frames[index];assert(f,'无效轮次');
@@ -319,6 +362,6 @@
       {index:f.length-1,title:'最终状态与可用依据',view:'overview'}];
     const seen=new Set(),unique=stops.filter(s=>s.index>=0&&!seen.has(s.index)&&seen.add(s.index));const dwell=Math.floor(30000/unique.length)/1000;let used=0;return unique.map((s,i)=>{const seconds=i===unique.length-1?30-used:dwell;used+=seconds;return {...s,seconds};});
   }
-  const api={partitions,states,sourceNames,label,category,isProtectedKey,isSensitive,personalKind,forbiddenPersonal,personalDraft,personalPayload,adapt,parse,parseJSON,encode,graph,roundView,events,position,controller,tour};
+  const api={partitions,states,sourceNames,label,category,isProtectedKey,isSensitive,personalKind,forbiddenPersonal,personalDraft,personalPayload,adapt,parse,parseJSON,encode,graph,archiveGraph,reexecutionGraph,roundView,events,position,controller,tour};
   if(typeof module!=='undefined')module.exports=api;else root.MemoryModel=api;
 })(typeof window!=='undefined'?window:globalThis);

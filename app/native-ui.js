@@ -60,7 +60,7 @@ const doc=root.document,invoke=(c,args={})=>root.__TAURI__.core.invoke(c,args),e
 entry.hidden=false;
 let dialog,ui={},exp=null,profiles=[],profileId=null,frameIndex=0,selected=null,graph=null,running=null,working=false;
 let temporaryTimer=null,graphExperiment=null;
-let builtin=null,draft=null,preview=null,view='setup',guideStep=0,contextExperiment=null,script=null,archive=null,archiveIndex=0;
+let builtin=null,draft=null,preview=null,view='setup',guideStep=0,contextExperiment=null,script=null,archive=null,archivePreview=null,archiveIndex=0,archiveGraphMode=false;
 const guide=[
  ['连接模型','保存供应商、API 地址、Key 和模型名称。测试连接由你主动执行，可能计费。','打开模型配置'],
  ['选择守则','已内置完整记忆守则。也可预览、确认自定义版本；已有实验的守则不变。','查看所选守则'],
@@ -89,7 +89,7 @@ function busy(value){
  ui.new.disabled=value||!draft;ui.rulesDefault.disabled=value||!builtin;ui.rulesAccept.disabled=value||!preview;
  ui.send.disabled=value||!exp||!!exp.pending;
  ui.cancel.disabled=!running?.busy;
- ui.fit.disabled=value||!graph||graph.destroyed;if(script)renderScript();
+ ui.fit.disabled=value||!graph||graph.destroyed;archiveControls(value);if(script)renderScript();
 }
 function model(id,requestId,system,messages,stream,onText){const channel=new root.__TAURI__.core.Channel();channel.onmessage=onText;return invoke('model_request',{id,requestId,system,messages,stream,onDelta:channel});}
 async function libraries(){
@@ -103,7 +103,7 @@ function useRules(policy){draft=policy;preview=null;ui.rules.value=policy.text;u
 async function previewRules(value,name){preview=null;ui.rulesPreview.hidden=true;const checked=await ruleDraft(value,name,'custom');preview=checked;ui.rulesPreviewText.textContent=checked.text;ui.rulesPreviewHash.textContent=sourceName(checked)+' · SHA-256 '+checked.sha256;ui.rulesPreview.hidden=false;}
 function setView(next){
  view=next;ui.setup.hidden=view!=='setup';ui.archivePanel.hidden=view!=='archive';ui.workspace.hidden=['setup','archive'].includes(view);ui.footer.hidden=['setup','archive'].includes(view);
- ui.graph.hidden=view!=='graph';ui.relation.hidden=view!=='graph';ui.graphHelp.hidden=view!=='graph';ui.conversation.hidden=view==='graph';ui.filter.hidden=view!=='graph';ui.fit.hidden=view!=='graph';ui.graphNote.hidden=view!=='graph';ui.composer.hidden=!['chat','answer'].includes(view);ui.sendOptions.hidden=ui.composer.hidden;ui.queryOptions.hidden=ui.composer.hidden;
+ for(const name of ['graphType','graphRole','graphEvent'])ui[name].hidden=view!=='graph';ui.graph.hidden=view!=='graph';ui.relation.hidden=view!=='graph';ui.graphHelp.hidden=view!=='graph';ui.conversation.hidden=view==='graph';ui.filter.hidden=view!=='graph';ui.fit.hidden=view!=='graph';ui.graphNote.hidden=view!=='graph';ui.composer.hidden=!['chat','answer'].includes(view);ui.sendOptions.hidden=ui.composer.hidden;ui.queryOptions.hidden=ui.composer.hidden;
  for(const [name,mode]of [['startView','setup'],['archiveView','archive'],['chatView','chat'],['evolutionView','evolution'],['graphView','graph'],['answerView','answer']])ui[name].setAttribute('aria-pressed',String(mode===view));
  render();if(view==='archive')renderArchive();graph?.setPaused(view!=='graph');
 }
@@ -117,6 +117,8 @@ async function recoverSaved(id,error){
 }
 async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');const id=exp.id;try{exp=await call({op,id,revision:exp.revision,...extra});}catch(error){await recoverSaved(id,error);}frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
 function render(){
+ if(view==='graph'&&archiveGraphMode&&archive){renderArchiveGraph();return;}
+ ui.memoryHeading.textContent='处理后的记忆';ui.memoryFile.hidden=false;const hasReplay=!!exp?.turns.some(t=>t.replay_source?.message_id);ui.graphType.hidden=ui.graphRole.hidden=ui.graphEvent.hidden=view!=='graph'||!hasReplay;
  const sameContext=contextExperiment===exp?.id;
  const chosen=new Set(sameContext?Array.from(ui.context.selectedOptions,o=>o.value):[]);
  contextExperiment=exp?.id??null;
@@ -130,6 +132,7 @@ function render(){
  ui.currentRules.hidden=!exp;ui.policyView.hidden=!exp;
  if(exp){ui.currentRulesText.textContent=exp.rules.text;ui.currentRulesHash.textContent=sourceName(exp.rules)+' · SHA-256 '+exp.rules.sha256;}
  if(!exp){
+  graph?.setData({nodes:[],edges:[],count:0},'LOCAL',{animate:false});graph?.select(null);
   ui.renameName.value='';ui.currentRulesText.textContent='';ui.currentRulesHash.textContent='';ui.policy.textContent='';ui.policy.title='';ui.recover.hidden=true;
   ui.position.max='0';ui.position.value='0';ui.round.textContent='尚无对话';ui.send.disabled=true;
   ui.memories.replaceChildren();ui.details.replaceChildren();ui.memoryPrivacy.textContent='';ui.memoryText.textContent='';ui.memoryPath.textContent='';ui.memoryDigest.textContent='';ui.memoryVerification.textContent='';clearPreview();
@@ -218,26 +221,63 @@ function render(){
  graphData(graphModel);busy(working);
 }
 function clearScript(){script=null;if(ui.scriptPanel){ui.scriptPanel.hidden=true;ui.scriptPreview.textContent='';ui.scriptHash.textContent='';ui.scriptState.textContent='';ui.scriptRound.replaceChildren();ui.scriptGrid.replaceChildren();}}
-function clearArchive(){archive=null;archiveIndex=0;if(ui.archiveList){ui.archiveList.replaceChildren();ui.archiveDetail.replaceChildren();ui.archiveMeta.textContent='尚未导入本机会话。';}}
+function clearArchive(){archive=null;archivePreview=null;archiveGraphMode=false;archiveIndex=0;invoke('forget_chat_archive').catch(()=>notice('浏览内容已清空，但原生来源句柄清理失败；请重开应用。'));if(ui.archiveList){ui.archiveList.replaceChildren();ui.archiveDetail.replaceChildren();ui.archiveMeta.textContent='尚未导入本机会话。';}}
+function archiveMatch(message){
+ const query=ui.archiveSearch.value.toLocaleLowerCase(),role=ui.archiveRole.value||'all';
+ return (!query||[message.id,message.text].some(v=>v?.toLocaleLowerCase().includes(query)))&&
+  (role==='all'||message.role===role||role==='tool'&&message.parts?.tool||role==='empty'&&!message.text);
+}
+function archiveIndexes(){return (archivePreview||archive)?.batches.flatMap((b,i)=>[b.user,...b.assistant].some(archiveMatch)?[i]:[])||[];}
+function archiveControls(value=working){
+ const indexes=archiveIndexes(),at=indexes.indexOf(archiveIndex);
+ ui.archiveReplay.disabled=value||!archive||!!archivePreview||!exp||!!exp.pending;
+ ui.archiveReplay.title=exp?'在独立实验中重新执行本地治理，不调用模型':'请先创建或打开本地角色实验';
+ ui.archiveGraph.disabled=value||!archive||!!archivePreview;
+ ui.archivePrevious.disabled=value||at<=0;ui.archiveNext.disabled=value||at<0||at===indexes.length-1;
+ ui.archiveClear.disabled=value||!archive&&!archivePreview;
+}
+function archiveStep(direction){const indexes=archiveIndexes(),at=indexes.indexOf(archiveIndex);if(at>=0)archiveIndex=indexes[Math.max(0,Math.min(indexes.length-1,at+direction))];renderArchive();}
 function renderArchive(){
  if(!ui.archivePanel)return;
  ui.title.textContent='会话原始记录';ui.policy.textContent='本机只读 · 不保存、不发送模型';
  ui.archiveList.replaceChildren();ui.archiveDetail.replaceChildren();
- if(!archive){ui.archiveMeta.textContent='选择本机 ZIP；导入后仅在当前窗口查看。';ui.archiveDetail.append(text('p','尚无会话。原始记录不会自动进入实验或长期记忆。'));return;}
- const {counts}=archive;
- ui.archiveMeta.textContent=`${archive.name} · SHA-256 ${archive.sha256} · ${counts.batches} 批用户输入 / ${counts.assistant} 条助手记录（其中 ${counts.assistant_with_text} 条有可展示文字）`;
- for(const [i,batch]of archive.batches.entries()){
+ const shown=archivePreview||archive;
+ ui.archiveAccept.hidden=ui.archiveReject.hidden=!archivePreview;
+ archiveControls();
+ if(!shown){ui.archiveMeta.textContent='选择本机 ZIP，预览后确认导入。';ui.archiveDetail.append(text('p','原始记录不会自动进入长期记忆。'));return;}
+ const {counts}=shown;
+ ui.archiveMeta.textContent=`${archivePreview?'待确认 · ':''}${shown.name} · ${counts.sessions||1} 个会话 · ${counts.messages} 条原始消息 · ${counts.user} 条用户消息 / ${counts.assistant} 条助手消息 · ${counts.assistant_with_text} 条助手有文字 · 可展示 ${counts.visible_text_chars??'未记录'} 字 · 工具 ${counts.tool||0} / 内部 ${counts.reasoning||0} / 异常 ${counts.anomalies||0}`;
+ const indexes=archiveIndexes();if(indexes.length&&!indexes.includes(archiveIndex))archiveIndex=indexes[0];archiveControls();
+ for(const [i,batch]of shown.batches.entries()){
+  if(!indexes.includes(i))continue;
   const control=button(`批次 ${batch.number} · ${batch.assistant.length} 条助手记录`,()=>{archiveIndex=i;renderArchive();});
   control.setAttribute('aria-pressed',String(i===archiveIndex));ui.archiveList.append(control);
  }
- const batch=archive.batches[archiveIndex];
- ui.archiveDetail.append(text('h2',`批次 ${batch.number} / ${counts.batches}`),text('small',`用户原始输入 · ${batch.user.time}`),text('p',batch.user.text));
- for(const [i,message]of batch.assistant.entries()){
+ if(!indexes.length){ui.archiveDetail.append(text('p','没有匹配的消息。'));return;}
+ const batch=shown.batches[archiveIndex];
+ ui.archiveDetail.append(text('h2',`批次 ${batch.number} / ${counts.batches}`));
+ for(const message of [batch.user,...batch.assistant].filter(archiveMatch)){
   const item=doc.createElement('section');item.className='native-archive-message';
-  item.append(text('small',`助手记录 ${i+1} · ${message.time}`),text('p',message.text||'本条没有可展示的回复文字；工具和内部片段未导入浏览区。'));
-  ui.archiveDetail.append(item);
+  item.append(text('small',`${message.role==='user'?'用户原始输入':'助手记录'} · ${message.time}`),text('p',message.text||'本条没有可展示文字；未补造回答。'));
+  const metadata=doc.createElement('details');metadata.append(text('summary','原始来源与片段'),text('pre',JSON.stringify({id:message.id,parent:message.parent_id,sequence:message.sequence,parts:message.parts},null,2)));
+  item.append(metadata);if(message.masked)item.append(text('small','高敏内容已遮蔽；原始 ZIP 未修改。'));
+  if(message.parts?.tool||message.parts?.reasoning)item.append(text('small',`工具 ${message.parts.tool||0} / 内部 ${message.parts.reasoning||0}；仅记录类型数量，正文未导入。`));
+  // Keep the user paragraph directly discoverable as before; metadata remains on demand.
+  if(message===batch.user)ui.archiveDetail.append(...item.children);else ui.archiveDetail.append(item);
  }
- if(!batch.assistant.length)ui.archiveDetail.append(text('p','该批次未记录助手消息。'));
+ if(shown.anomalies?.length){const issues=doc.createElement('details');issues.append(text('summary','解析异常 '+shown.anomalies.length),text('pre',JSON.stringify(shown.anomalies,null,2)));ui.archiveDetail.append(issues);}
+ const provenance=doc.createElement('details');provenance.append(text('summary','归档来源'),text('p',shown.sha256),text('p','会话 '+(shown.session_id||'未记录')+'；不据此授予角色权限。'));ui.archiveDetail.append(provenance);
+}
+function renderArchiveGraph(){
+ ui.memoryHeading.textContent='原始消息';ui.filter.hidden=ui.graphType.hidden=ui.graphEvent.hidden=true;ui.title.textContent='原始消息关系';ui.policy.textContent='只读历史记录 · 非记忆快照';ui.currentRules.hidden=true;ui.policyView.hidden=true;
+ ui.round.textContent=`原始批次 ${archiveIndex+1} / ${archive.batches.length}`;ui.position.max=String(archive.batches.length-1);ui.position.value=String(archiveIndex);
+ const m=currentModel();ui.memories.replaceChildren();for(const n of m.nodes){const b=button(n.label,()=>selectNode(n));b.value=n.id;ui.memories.append(b);}
+ ui.details.replaceChildren();if(selected){const n=m.nodes.find(n=>n.id===selected);if(n)details(n.key,n.payload,n);else selected=null;}
+ ui.memoryPrivacy.textContent='高敏值默认遮蔽；原始 ZIP 仍保留原内容。';ui.memoryFile.hidden=true;graphData(m);
+}
+function jumpToOrigin(origin){
+ if(!archive||archive.sha256!==origin.sha256||archive.session_id!==origin.session_id){notice('请重新导入相同 SHA-256 的 ZIP 后查看原始消息；不会补造来源正文。');return;}
+ archiveGraphMode=false;archiveIndex=origin.batch-1;ui.archiveSearch.value='';ui.archiveRole.value='all';setView('archive');
 }
 function renderScript(){
  ui.scriptPanel.hidden=!script;if(!script)return;
@@ -252,10 +292,11 @@ function renderScript(){
  ui.scriptUse.disabled=working||!exp||!!restricted;
 }
 function operationName(value){return ({set:'建议保存',derive:'建议派生',retire:'建议失效',delete:'建议删除',review:'建议复核',ADD:'新增',UPDATE:'更正',MERGE:'合并',REJECT:'拒绝',NO_CHANGE:'无写入',RETIRE:'退出当前状态',DELETE:'删除',PENDING:'隔离待核实'})[value]||value;}
-function currentModel(){if(!exp?.frames.length)return null;const m=root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:view==='graph'?(ui.filter.value||'all'):'all',includeVersions:view==='graph'});if(view==='graph'&&ui.relation.value&&ui.relation.value!=='all')m.edges=m.edges.filter(e=>e.type===ui.relation.value);return m;}
+function currentModel(){if(view==='graph'&&archiveGraphMode&&archive){const m=root.MemoryModel.archiveGraph(archive,archiveIndex,{messageRole:ui.graphRole.value||'all'});if(ui.relation.value&&ui.relation.value!=='all')m.edges=m.edges.filter(e=>e.type===ui.relation.value);return m;}if(!exp?.frames.length)return null;const options={state:view==='graph'?(ui.filter.value||'all'):'all',includeVersions:view==='graph',nodeType:ui.graphType.value||'all',messageRole:ui.graphRole.value||'all',event:ui.graphEvent.value||'all'};const m=view==='graph'&&exp.turns.some(t=>t.replay_source?.message_id)?root.MemoryModel.reexecutionGraph(exp,frameIndex,options):root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,options);if(view==='graph'&&ui.relation.value&&ui.relation.value!=='all')m.edges=m.edges.filter(e=>e.type===ui.relation.value);return m;}
 function selectNode(n){selected=n.id;details(n.key,n.payload||{value:'原值已清除',source:'未记录'},n);graph?.select(n.id);if(view==='graph')graph?.focus(n.id);for(const b of ui.memories.children)b.setAttribute('aria-pressed',String(b.value===n.id));}
-const relationName=value=>({SUPERSEDE:'更正',DERIVE:'派生',CONTRADICT:'冲突'})[value]||value;
+const relationName=value=>({SUPERSEDE:'更正',DERIVE:'派生',CONTRADICT:'冲突',SOURCE:'来源消息',PARENT:'父消息',GOVERNANCE:'本轮治理',AFFECTS:'操作目标'})[value]||value;
 function details(key,p,node){
+ if(node?.nodeType&&node.nodeType!=='memory'){ui.details.replaceChildren(text('h2',node.label),text('p',p.value),text('pre',JSON.stringify(node.audit||node.message||{},null,2)));if(node.frameDecisions)ui.details.append(text('small','同轮裁决记录；未推断单条审计事件的原因'),text('pre',JSON.stringify(node.frameDecisions,null,2)));if(node.origin)ui.details.append(button('定位原始消息',()=>jumpToOrigin(node.origin)));return;}
  const base=key.replace(/__previous$/,''),f=exp.frames[frameIndex];
  const versions=f?.governance.versions.filter(r=>r.key===base)||[];
  ui.details.replaceChildren(text('h2',root.MemoryModel.label(key)),text('p',p.value),text('p','来源：'+(root.MemoryModel.sourceNames[p.source]||p.source||'未记录')));
@@ -276,7 +317,7 @@ function details(key,p,node){
   }
   if(!relations.size)ui.details.append(text('p','未登记版本间关系。'));
   const sources=record.source||[];
-  for(const source of sources)ui.details.append(text('small',`来源：${source.source_kind} · ${source.source_turn===null?'轮次未记录':'第 '+source.source_turn+' 轮'}`));
+  for(const source of sources){const origin=exp.turns[source.source_turn-1]?.replay_source;if(origin?.message_id)ui.details.append(button('定位来源批次 '+origin.batch,()=>jumpToOrigin(origin)));ui.details.append(text('small',`来源：${source.source_kind} · ${source.source_turn===null?'轮次未记录':'第 '+source.source_turn+' 轮'}`));}
  }
  const current=exp.snapshot.current?.[base];
  if(p.retention){ui.details.append(text('p','本地保存用途：'+p.retention.purpose+'。不附带到模型或用作派生依据。'));if(frameIndex===exp.frames.length-1&&current?.version===p.version)ui.details.append(button('删除这条私人记忆',async()=>{await mutate('privacy_delete',{key:base,version:p.version,confirmed:true});}));return;}
@@ -286,8 +327,9 @@ function details(key,p,node){
    button('删除记忆',async()=>{await mutate('memory_delete',{key:base,version_id:version.version_id,confirmed:true});}));
 }
 function graphData(m=currentModel()){if(ui.graph.hidden||graph?.destroyed)return;if(!m){graph?.setData({nodes:[],edges:[],count:0},exp?.role||'LOCAL',{animate:false});graph?.select(null);ui.graphNote.textContent='尚无治理记录，二维记忆列表仍可使用。';return;}if(!graph){try{graph=new root.MemoryGraph.GraphView(ui.graph,{states:root.MemoryModel.states,onSelect:id=>{const n=currentModel()?.nodes.find(n=>n.id===id);if(n){selectNode(n);}},onUnavailable:m=>{ui.graphNote.textContent=m;ui.fit.disabled=true;}});graph.configure({motion:!root.matchMedia('(prefers-reduced-motion: reduce)').matches,low:false});}catch{ui.graphNote.textContent='WebGL不可用，请使用记忆列表和时间轴。';return;}}
- if(graphExperiment!==exp.id){graph.setCatalog(exp.frames.flatMap((_,i)=>root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},i,{includeVersions:true}).nodes));graphExperiment=exp.id;}
- ui.graphNote.textContent=m.nodes.length?'':'本轮没有符合筛选条件的记忆。';graph.setData(m,exp.role,{animate:false});graph.select(m.nodes.some(n=>n.id===selected)?selected:null);graph.resizeToHost();graph.request();}
+ const catalogKey=archiveGraphMode?'archive:'+archive.sha256:exp.id+':'+exp.revision;
+ if(graphExperiment!==catalogKey){graph.setCatalog(m.nodes);graphExperiment=catalogKey;}
+ ui.graphNote.textContent=m.nodes.length?'':'本轮没有符合筛选条件的记忆。';graph.setData(m,archiveGraphMode?'ARCHIVE':exp.role,{animate:false});graph.select(m.nodes.some(n=>n.id===selected)?selected:null);graph.resizeToHost();graph.request();}
 function createDialog(){
  dialog=doc.createElement('dialog');dialog.className='native-lab';dialog.setAttribute('aria-label','AI Memory Lab 工作区');
  // Static markup only. All model/user text uses textContent.
@@ -306,11 +348,11 @@ function createDialog(){
  <p>选择或编辑守则只影响新实验。守则仅作为本实验的治理配置，不能扩大应用权限；实际写入由内核裁决。</p><details id="nl-current-rules" hidden><summary>当前实验的固定守则</summary><p id="nl-current-rules-hash" class="native-digest"></p><pre id="nl-current-rules-text"></pre></details></details></div>
  <div class="native-create"><label>新实验名称<input id="nl-name" placeholder="例如：偏好更正实验" maxlength="80" data-idle></label><label>本地角色标识<input id="nl-role" value="LOCAL" pattern="[A-Z][A-Z0-9_]{0,39}" maxlength="40" data-idle></label><button id="nl-new" data-idle>创建实验</button><span id="nl-create-summary"></span></div></section>
  <details class="native-script"><summary>官方 28 轮脚本</summary><div class="native-actions"><button id="nl-script-import" data-idle>导入官方原件</button><input id="nl-script-file" type="file" accept=".md,text/markdown" hidden><button id="nl-script-replay" data-idle>查看独立模拟演示 · SIMULATED</button><button id="nl-script-clear" data-idle>清除本次导入</button></div><section id="nl-script-panel" hidden><small id="nl-script-hash" class="native-digest"></small><div class="native-script-browse"><div class="native-script-reader"><label>当前脚本轮次<select id="nl-script-round" data-idle></select></label><pre id="nl-script-preview"></pre><p id="nl-script-state"></p><button id="nl-script-use" data-idle>放入输入框，不自动发送</button></div><div id="nl-script-grid" class="native-script-grid" role="group" aria-label="完整28轮目录"></div></div></section></details>
- <section id="nl-archive-panel" class="native-archive" aria-label="本机会话 ZIP 浏览" hidden><div class="native-archive-bar"><div><h2>本机会话</h2><small id="nl-archive-meta"></small></div><div><button id="nl-archive-import" data-idle>选择 ZIP</button><button id="nl-archive-replay" data-idle>在新实验逐批重新治理</button><button id="nl-archive-clear" data-idle>清除浏览</button></div></div><p class="native-archive-boundary">这里只读展示导出中的用户与助手文字。工具和内部片段不作为回答；没有记忆操作记录时，不推断历史记忆演化。只读浏览不创建实验。主动重新治理另建本地实验，不调用模型，不把历史回答冒充本次结果；私人内容不进入发布包。</p><div class="native-archive-columns"><nav id="nl-archive-list" aria-label="会话批次"></nav><article id="nl-archive-detail"></article></div></section>
- <div id="nl-workspace" class="native-workspace" hidden><section><div class="native-view"><select id="nl-filter" aria-label="记忆状态筛选" data-idle><option value="all">全部状态</option><option value="current">当前</option><option value="task">未完成任务</option><option value="completed">已完成</option><option value="pending">待核实</option><option value="history">历史</option><option value="retired">已退出</option></select><select id="nl-relation" aria-label="关系筛选" data-idle><option value="all">全部关系</option><option value="主体归属">角色归属</option><option value="SUPERSEDE">更正</option><option value="DERIVE">派生</option><option value="CONTRADICT">冲突</option></select><button id="nl-fit" data-idle>重置视角</button><span id="nl-graph-note"></span></div><section id="nl-live" class="native-live" aria-label="当前模型响应（尚未保存）" hidden></section><div id="nl-conversation" class="native-conversation"></div><div id="nl-graph" class="native-graph" role="img" aria-label="本轮已登记的记忆版本与关系；也可用右侧列表查看" hidden></div><small id="nl-graph-help" class="native-graph-help" hidden>左键拖动旋转 · 滚轮缩放 · 右键平移 · 点选节点聚焦；键盘可通过右侧记忆列表查看关系。</small></section><aside><h2>处理后的记忆</h2><div id="nl-memories"></div><div id="nl-details"></div><p id="nl-memory-privacy" role="status" aria-live="polite"></p><details id="nl-memory-file"><summary>角色记忆文件</summary><p id="nl-memory-path" class="native-digest"></p><small id="nl-memory-verification" role="status"></small><small id="nl-memory-digest" class="native-digest"></small><div class="native-actions"><button id="nl-memory-read" data-idle>读取 Markdown</button><button id="nl-memory-reveal" data-idle>打开所在文件夹</button><button id="nl-memory-export" data-idle>导出 Markdown</button></div><pre id="nl-memory-text"></pre></details></aside></div>
+ <section id="nl-archive-panel" class="native-archive" aria-label="本机会话 ZIP 浏览" hidden><div class="native-archive-bar"><div><small id="nl-archive-meta"></small></div><div><button id="nl-archive-import" data-idle>选择 ZIP</button><button id="nl-archive-accept" data-idle hidden>确认导入</button><button id="nl-archive-reject" data-idle hidden>取消预览</button><button id="nl-archive-graph" data-idle>原始消息关系</button><button id="nl-archive-replay" data-idle>在新实验逐批重新治理</button><button id="nl-archive-clear" data-idle>清除浏览</button></div></div><details class="native-archive-boundary"><summary>导入与隐私说明</summary><p>这里只读展示导出中的用户与助手文字。高敏值默认遮蔽。工具和内部片段只计数，不作为回答；没有记忆操作记录时，不推断历史记忆演化。只读浏览不创建实验。主动重新治理另建本地实验，不调用模型，不把历史回答冒充本次结果；私人内容不进入发布包。</p></details><div class="native-archive-tools"><input id="nl-archive-search" type="search" aria-label="搜索消息文字或原始 ID" placeholder="搜索文字或消息 ID" data-idle><select id="nl-archive-role" aria-label="原始消息筛选" data-idle><option value="all">全部消息</option><option value="user">用户</option><option value="assistant">助手</option><option value="tool">含工具记录</option><option value="empty">无文字</option></select><button id="nl-archive-previous" data-idle>上一批</button><button id="nl-archive-next" data-idle>下一批</button></div><div class="native-archive-columns"><nav id="nl-archive-list" aria-label="会话批次"></nav><article id="nl-archive-detail"></article></div></section>
+ <div id="nl-workspace" class="native-workspace" hidden><section><div class="native-view"><select id="nl-filter" aria-label="记忆状态筛选" data-idle><option value="all">全部状态</option><option value="current">当前</option><option value="task">未完成任务</option><option value="completed">已完成</option><option value="pending">待核实</option><option value="history">历史</option><option value="retired">已退出</option></select><select id="nl-relation" aria-label="关系筛选" data-idle><option value="all">全部关系</option><option value="主体归属">角色归属</option><option value="SUPERSEDE">更正</option><option value="DERIVE">派生</option><option value="SOURCE">来源消息</option><option value="PARENT">父消息</option><option value="GOVERNANCE">触发治理</option><option value="AFFECTS">操作目标</option><option value="CONTRADICT">冲突</option></select><select id="nl-graph-type" aria-label="图谱节点类型" data-idle><option value="all">全部节点</option><option value="memory">记忆版本</option><option value="message">来源消息</option><option value="event">治理事件</option></select><select id="nl-graph-role" aria-label="消息角色" data-idle><option value="all">全部消息角色</option><option value="user">用户消息</option><option value="assistant">助手消息</option></select><select id="nl-graph-event" aria-label="审计事件筛选" data-idle><option value="all">全部事件</option><option value="ADD">新增</option><option value="UPDATE">更新</option><option value="DELETE">删除</option><option value="REJECT">拒绝</option><option value="RETIRE">失效</option></select><button id="nl-fit" data-idle>重置视角</button><span id="nl-graph-note"></span></div><section id="nl-live" class="native-live" aria-label="当前模型响应（尚未保存）" hidden></section><div id="nl-conversation" class="native-conversation"></div><div id="nl-graph" class="native-graph" role="img" aria-label="本轮已登记的记忆版本与关系；也可用右侧列表查看" hidden></div><small id="nl-graph-help" class="native-graph-help" hidden>左键拖动旋转 · 滚轮缩放 · 右键平移 · 点选节点聚焦；键盘可通过右侧记忆列表查看关系。</small></section><aside><h2 id="nl-memory-heading">处理后的记忆</h2><div id="nl-memories"></div><div id="nl-details"></div><p id="nl-memory-privacy" role="status" aria-live="polite"></p><details id="nl-memory-file"><summary>角色记忆文件</summary><p id="nl-memory-path" class="native-digest"></p><small id="nl-memory-verification" role="status"></small><small id="nl-memory-digest" class="native-digest"></small><div class="native-actions"><button id="nl-memory-read" data-idle>读取 Markdown</button><button id="nl-memory-reveal" data-idle>打开所在文件夹</button><button id="nl-memory-export" data-idle>导出 Markdown</button></div><pre id="nl-memory-text"></pre></details></aside></div>
  <footer id="nl-footer" hidden><div class="native-round"><span id="nl-round"></span><input id="nl-position" type="range" min="0" max="0" value="0" aria-label="实验轮次" data-idle></div><details id="nl-send-options" class="native-send-options"><summary>发送设置与上下文</summary><small id="nl-model-summary"></small><small id="nl-context-summary" role="status"></small><details id="nl-context-panel" hidden><summary>本轮附带的记忆</summary><label>仅发送所选记忆，仍须通过内核准入；默认不附带。可用 Ctrl / Command 多选。<select id="nl-context" multiple size="3" data-idle></select></label><label><input id="nl-context-keep" type="checkbox" data-idle>保持本实验的选择（每轮重新校验）</label><small>待办优先列出；历史记忆检索暂不支持。最近聊天仍按时效与容量裁剪。</small></details><div id="nl-query-options"><label><input id="nl-history" type="checkbox" checked data-idle>附带适用的历史聊天</label><button id="nl-followup" type="button" data-idle>填入证据回顾问题</button><button id="nl-baseline" type="button" data-idle>本次对照：不附带记忆和聊天</button></div><label><input id="nl-temporary" type="checkbox" data-idle>仅本轮临时处理：允许发送模型，不保存对话或记忆</label></details><form id="nl-composer"><textarea id="nl-input" rows="2" aria-label="发送给模型的消息" placeholder="输入消息；Enter 发送，Shift + Enter 换行" data-idle></textarea><button id="nl-send" data-idle>发送</button><button id="nl-cancel" type="button" disabled>取消请求</button></form><small>模型建议 → 内核自动准入或按需确认 → 本机保存。删除记忆不等于删除原始聊天。</small></footer>`;
  doc.body.append(dialog);
- for(const id of ['relation','graph-help','memory-verification','archive-panel','archive-meta','archive-import','archive-clear','archive-list','archive-detail','archive-view','send-options','script-grid','script-import','script-file','script-replay','script-clear','script-panel','script-hash','script-round','script-preview','script-state','script-use','answer-view','followup','history','query-options','baseline','temporary','memory-privacy','memory-file','memory-path','memory-digest','memory-read','memory-reveal','memory-export','memory-text','role','archive-replay','context', 'context-panel', 'context-summary', 'context-keep', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
+ for(const id of ['memory-heading','archive-accept','archive-reject','archive-search','archive-role','archive-previous','archive-next','archive-graph','graph-type','graph-role','graph-event','relation','graph-help','memory-verification','archive-panel','archive-meta','archive-import','archive-clear','archive-list','archive-detail','archive-view','send-options','script-grid','script-import','script-file','script-replay','script-clear','script-panel','script-hash','script-round','script-preview','script-state','script-use','answer-view','followup','history','query-options','baseline','temporary','memory-privacy','memory-file','memory-path','memory-digest','memory-read','memory-reveal','memory-export','memory-text','role','archive-replay','context', 'context-panel', 'context-summary', 'context-keep', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('cancel',e=>{e.preventDefault();if(!working)leave();});
  const bind=(name,fn)=>ui[name].addEventListener('click',()=>guard(fn));
  bind('close',leave);
@@ -339,7 +381,12 @@ function createDialog(){
  bind('guideAction',()=>{if(guideStep<2){setView('setup');ui[guideStep===0?'modelPanel':'rulesPanel'].open=true;ui[guideStep===0?'models':'rulesDefault'].focus();}else if(guideStep===2){setView(exp?'chat':'setup');ui[exp?'input':'name'].focus();}else setView(exp?'evolution':'setup');});
  const sample=()=>{dismissGuide();leave();root.dispatchEvent(new Event('memory-native-sample'));root.MemoryWorkspace?.restore(root.MemoryModel.adapt(root.REPLAY_DATA));root.MemoryWorkspace?.view('graph');const a=doc.getElementById('context-admission');if(a)a.open=true;root.MemoryWorkspace?.notice('SIMULATED · 结构化内核回放。候选操作由人工标注，不含模型提取或最终回答；可按轮查看实际差异和准入。');};bind('sample',sample);
  bind('scriptImport',()=>ui.scriptFile.click());
- bind('archiveImport',async()=>{const result=await invoke('import_chat_archive');if(!result){notice('已取消导入；当前浏览内容保持不变。');return;}if(result.format!=='memory-lab.chat-archive.v1'||!Array.isArray(result.batches))throw Error('会话解析结果无效');if(archive?.sha256===result.sha256){notice('这份 ZIP 已在当前窗口导入，没有重复记录。');return;}archive=result;archiveIndex=0;setView('archive');notice(`已核验 ${result.counts.batches} 批会话；此 ZIP 没有可核验的历史记忆操作记录。`);});
+ bind('archiveImport',async()=>{const result=await invoke('import_chat_archive');if(!result){notice('已取消导入；当前浏览内容保持不变。');return;}if(result.format!=='memory-lab.chat-archive.v1'||!Array.isArray(result.batches))throw Error('会话解析结果无效');if(archivePreview?.archive_token&&archivePreview.archive_token!==archive?.archive_token&&archivePreview.archive_token!==result.archive_token)await invoke('forget_chat_archive',{archiveToken:archivePreview.archive_token});if(archive?.sha256===result.sha256){if(result.archive_token&&result.archive_token!==archive.archive_token)await invoke('forget_chat_archive',{archiveToken:result.archive_token});archivePreview=null;renderArchive();notice('这份 ZIP 已导入，没有重复记录。');return;}archivePreview=result;archiveIndex=0;setView('archive');notice('解析完成，请查看消息数量和异常后确认导入；尚未创建实验。');});
+ bind('archiveAccept',async()=>{if(!archivePreview)return;if(archive?.archive_token&&archive.archive_token!==archivePreview.archive_token)await invoke('forget_chat_archive',{archiveToken:archive.archive_token});archive=archivePreview;archivePreview=null;archiveIndex=0;archiveGraphMode=false;renderArchive();notice('已导入本窗口；高敏值已遮蔽，未核验历史记忆状态。');});
+ bind('archiveReject',async()=>{if(archivePreview?.archive_token&&archivePreview.archive_token!==archive?.archive_token)await invoke('forget_chat_archive',{archiveToken:archivePreview.archive_token});archivePreview=null;archiveIndex=0;renderArchive();notice('已取消预览，原浏览记录未被替换。');});
+ bind('archivePrevious',()=>archiveStep(-1));bind('archiveNext',()=>archiveStep(1));
+ ui.archiveSearch.oninput=renderArchive;ui.archiveRole.onchange=renderArchive;
+ bind('archiveGraph',()=>{if(!archive||archivePreview)return;archiveGraphMode=true;ui.relation.value=ui.graphRole.value='all';setView('graph');});
  bind('archiveClear',()=>{clearArchive();renderArchive();notice('会话浏览内容已从当前窗口清除；原始 ZIP 未改动。');});
  ui.scriptFile.onchange=()=>guard(async()=>{const file=ui.scriptFile.files[0];ui.scriptFile.value='';if(!file)return;if(file.size>400000)throw Error('脚本超过400KB');const parsed=await scriptDraft(new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer()),file.name);script=parsed;ui.scriptRound.replaceChildren(...script.rows.map(r=>new Option('第 '+r.round+' 轮',String(r.round-1))));renderScript();notice('已核验原件哈希和连续28轮；没有保存或发送脚本文本。');});
  ui.scriptRound.onchange=renderScript;
@@ -350,15 +397,15 @@ function createDialog(){
  bind('baseline',()=>{for(const option of ui.context.options)option.selected=false;ui.contextKeep.checked=false;ui.history.checked=false;contextSummary();notice('下次请求仍使用实验守则，但不附带记忆或历史。请自行输入并发送对照问题。');});
  bind('recover',()=>mutate('abort',{request_id:exp.pending.request_id,status:'interrupted'}));
  bind('export',async()=>{if(!exp)throw Error('请先打开实验');const sections=['rules','memory','turns'].filter(x=>dialog.querySelector('#nl-export-'+x).checked);if(!sections.length)throw Error('请选择导出范围');notice(await invoke('export_experiment',{id:exp.id,sections})?'已保存所选实验数据。':'已取消导出。');});
- bind('startView',()=>setView('setup'));bind('archiveView',()=>setView('archive'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>setView('graph'));bind('answerView',()=>setView('answer'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;ui.relation.onchange=render;ui.context.onchange=contextSummary;ui.history.onchange=contextSummary;
- ui.position.oninput=()=>{frameIndex=Number(ui.position.value);render();};
+ bind('startView',()=>setView('setup'));bind('archiveView',()=>setView('archive'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>{archiveGraphMode=false;setView('graph');});bind('answerView',()=>setView('answer'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;ui.relation.onchange=render;ui.graphType.onchange=render;ui.graphRole.onchange=render;ui.graphEvent.onchange=render;ui.context.onchange=contextSummary;ui.history.onchange=contextSummary;
+ ui.position.oninput=()=>{if(archiveGraphMode&&view==='graph')archiveIndex=Number(ui.position.value);else frameIndex=Number(ui.position.value);render();};
  bind('memoryRead',async()=>{if(!exp)throw Error('请先打开实验');const record=await call({op:'role_memory',id:exp.id});ui.memoryText.textContent=record.text;ui.memoryPath.textContent=record.path;ui.memoryDigest.textContent=record.sha256;});
  bind('memoryReveal',async()=>{if(!exp)throw Error('请先打开实验');notice(await invoke('reveal_role_memory',{id:exp.id}));});
  bind('memoryExport',async()=>{if(!exp)throw Error('请先打开实验');notice(await invoke('export_role_markdown',{id:exp.id})?'已导出角色私人记忆，请谨慎共享。':'已取消导出。');});
  bind('archiveReplay',async()=>{
-  if(!archive||!exp)throw Error('请先创建目标角色实验，并打开本地 ZIP');
+  if(!archive||!exp||archivePreview)throw Error('请先创建目标角色实验，并打开本地 ZIP');
   if(!root.confirm(`将 ZIP 中用户消息作为角色 ${exp.role} 的待审核自述，在新实验逐批重新治理？ZIP 标签不会授予权限；不会调用模型或复用历史助手回答。仅本地能可靠识别的陈述会生效，其余记录为无变化。`))return;
-  const source=archive;exp=await call({op:'create',name:exp.name+' · ZIP重新治理',role:exp.role,rules:exp.rules.text,...(exp.rules.source?{rules_source:exp.rules.source}:{})});
+  const source=archive;archiveGraphMode=false;exp=await call({op:'create',name:exp.name+' · ZIP重新治理',role:exp.role,rules:exp.rules.text,...(exp.rules.source?{rules_source:exp.rules.source}:{})});
   let stopped=false;running={busy:true,stop:async()=>{stopped=true;}};ui.cancel.disabled=false;
   try{for(const batch of source.batches){if(stopped)break;notice(`本地重新治理 ${batch.number} / ${source.batches.length} 批；未调用模型。`);
    exp=await invoke('replay_archive_batch',{id:exp.id,revision:exp.revision,archiveToken:source.archive_token,batch:batch.number,sha256:source.sha256,adoptUserMessages:true});

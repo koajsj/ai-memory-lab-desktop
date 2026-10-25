@@ -14,16 +14,16 @@
       "sha256": "6458fe57868733d70d44eb47c5dfa44d160b6713166c6cf4b622e9fb5063a136"
     },
     "README.md": {
-      "size": 13107,
-      "sha256": "2db9043951478378b8845dc930c15e3ca0f5f8ffc77f15cfab013676291a78eb"
+      "size": 14784,
+      "sha256": "c615792f5d01412ccd9b8da90aa1df712a9c11500365b3dea69126add1f96ff8"
     },
     "app/QUICKSTART.md": {
-      "size": 822,
-      "sha256": "710dbdd430338c190ec873edecb78c66c2c73728d19738d7302f0a57ab58641d"
+      "size": 870,
+      "sha256": "b29a3f411693daadfb98a1da309bfefbf2949221a1e0e4ef378427e656b9975d"
     },
     "app/README.md": {
-      "size": 9091,
-      "sha256": "b49bbabac66b22826aa6026e2efed4b4b7470aee04673d10df6129b1b5fed8cd"
+      "size": 10864,
+      "sha256": "580789aff247c4dafbdb9c0cf67ebe4545ca4d4130f4ab0fcce4cd5d6488adae"
     },
     "app/THIRD_PARTY_NOTICES.txt": {
       "size": 1251410,
@@ -46,8 +46,8 @@
       "sha256": "d16f91cd8054bf9d072d4c6d81daf67052721de2c5c4c22ed3cbcf39e42f7871"
     },
     "app/check-native.mjs": {
-      "size": 40017,
-      "sha256": "3ae17af70300628ea616485287d2b15dd7a881bf6b7e0c792cb4f8e4dbd87e40"
+      "size": 46721,
+      "sha256": "82111601195fe7fc4df1f32c1af26ec42dbc2b8767a505f745fd6b75ddc9ec3c"
     },
     "app/check-sandbox.mjs": {
       "size": 17901,
@@ -74,12 +74,12 @@
       "sha256": "a5d9ea2cb0e6af42eb0bad4617787416674262adcee53799dd0f3d3988c2adaf"
     },
     "app/model.js": {
-      "size": 33173,
-      "sha256": "bcf89e41d893dbd66aa60097033bfa96faa1b3866048fdbfe695536d22934bd3"
+      "size": 36805,
+      "sha256": "9b2f01ff6848e62df56ede2e468250282288c1cd4a8b2ec57ffc66e84993b09c"
     },
     "app/native-ui.js": {
-      "size": 63984,
-      "sha256": "ba1f6d205c0f03605b0f47d76cc1ddbcde0ba7e3ce53ab1c079f6e3816f4d93f"
+      "size": 73592,
+      "sha256": "87a06e766fb566212382921d1f726724d651db84a2603fe119f8695be2ba57ed"
     },
     "app/package-lock.json": {
       "size": 22022,
@@ -126,8 +126,8 @@
       "sha256": "cd4605e608ba42ad0b3fed9c18d44369f778755c8bccdf68bbaf6b461d5642f3"
     },
     "app/src-tauri/src/desktop.rs": {
-      "size": 26153,
-      "sha256": "a5af9a59f321bb69aaf3adadcdae78d7b3c779b8e465e9ea5a004e04a953cae0"
+      "size": 26580,
+      "sha256": "aa663f3d0ee7d3b195e7f990d4607e4b4d2789c6e948826ce631360daabe3786"
     },
     "app/src-tauri/src/main.rs": {
       "size": 3164,
@@ -154,8 +154,8 @@
       "sha256": "95ab2dba21f7a3d223e1e20dce17191ebe32d883415e75db036327f40e98e240"
     },
     "app/src/graph.js": {
-      "size": 20094,
-      "sha256": "566302b47a7593894399e485209f1886068a691189e20ae751d815512df648f3"
+      "size": 20200,
+      "sha256": "67e2741d760325fd10ec72e030e391339a30266e105d187414156f0fae709868"
     },
     "app/src/public-demo.json": {
       "size": 810620,
@@ -170,8 +170,8 @@
       "sha256": "b0263ec13bd26579648ccd983eee1884a07781cb31695a57e68d77bb7fb52aff"
     },
     "app/style.css": {
-      "size": 38413,
-      "sha256": "181ff6d29ff5f75ce625d925baed63efea2b17cf068eea536a8b0f571dc71c09"
+      "size": 38709,
+      "sha256": "794b4f4d1fefc46a92394ea14b0c51ea3bc2d179a03498995ef84f179dc11f13"
     },
     "docs/windows-delivery.md": {
       "size": 12053,
@@ -186,16 +186,16 @@
       "sha256": "91c81b187d4578648e43e888267e810b9a60373915b4d58d0f1291568579517a"
     },
     "tests/test_desktop_service.py": {
-      "size": 88065,
-      "sha256": "76983913a2497539380332c93792df6a7133647b800496fe526936e3ec51d68f"
+      "size": 91164,
+      "sha256": "19f904c4db16a22bb235c94a200f8403c4005f43189de017b0ff7520088c0fad"
     },
     "tests/test_role_memory.py": {
       "size": 27825,
       "sha256": "77829d2c9942b83da9a1008e7ba8b92b622630d979b0f136445b57584d543f69"
     },
     "tools/chat_archive.py": {
-      "size": 5626,
-      "sha256": "9089f7b1bb353b165dadf22a7c370d34b13c414e2d8a2014d519738bd42e4f84"
+      "size": 7698,
+      "sha256": "ff14f48f382a164d886a7d1321759c918645d7d1213ad341955dd75113660ed2"
     },
     "tools/check_native_worker.py": {
       "size": 7158,
@@ -206,8 +206,8 @@
       "sha256": "411317bd9bce1909c72d4f367157e34179721f3aeb219f53cefb9865b29449c7"
     },
     "tools/desktop_service.py": {
-      "size": 64217,
-      "sha256": "5bc0467e095891ba45675a4b76a40d7d69360e61010c0da87989dd416f61f292"
+      "size": 65637,
+      "sha256": "fbd4b02a7c429abd87a51ce48503fbfec075cad9d1f776bbf0f6f1b6bc77a190"
     },
     "tools/engine.py": {
       "size": 32396,

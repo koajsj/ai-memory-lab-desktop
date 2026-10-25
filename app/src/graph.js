@@ -4,7 +4,7 @@ import {fitView,stableLayout,placeLabels} from './view-math.mjs';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 const graphemes=typeof Intl.Segmenter==='function'?new Intl.Segmenter(undefined,{granularity:'grapheme'}):null;
-export const edgeColors={'主体归属':0xb6c0c6,'已存储历史版本':0x7c8993,SUPERSEDE:0x657d8b,DERIVE:0x1b6c80,CONTRADICT:0x9b503e};
+export const edgeColors={'主体归属':0xb6c0c6,'已存储历史版本':0x7c8993,SUPERSEDE:0x657d8b,DERIVE:0x1b6c80,CONTRADICT:0x9b503e,SOURCE:0x507c71,PARENT:0x7c8993,CONTAINS:0xb6c0c6,GOVERNANCE:0x657d8b,AFFECTS:0x9b7351};
 export class GraphView {
   constructor(host,{onSelect,onUnavailable,states}){
     this.host=host;this.onSelect=onSelect;this.onUnavailable=onUnavailable;this.states=states;this.items=new Map();this.destroyed=false;this.motion=true;
@@ -76,7 +76,7 @@ export class GraphView {
     for(const [id,item] of this.items)if(item.exiting||!privateVisible)this.remove(id);
     const first=!this.model;
     this.role.visible=privateVisible;
-    const roleText=privateVisible?role+' · 角色归属':'未授权视角：无私人节点';
+    const roleText=privateVisible?(model.rootLabel||role+' · 角色归属'):'未授权视角：无私人节点';
     if(this.roleText!==roleText){
       if(this.roleLabel){this.scene.remove(this.roleLabel);this.roleLabel.material.map.dispose();this.roleLabel.material.dispose();}
       this.roleLabel=this.text(roleText);this.roleLabel.position.set(0,1.1,0);this.scene.add(this.roleLabel);this.roleText=roleText;

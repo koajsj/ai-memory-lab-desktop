@@ -45,12 +45,55 @@ def test_chat_archive_groups_actual_messages_without_promoting_internal_parts(tm
         archive_message('a3','assistant',1004,[{'type':'text','text':'第二批答复'}],'u2'),
     ]
     result=inspect_chat_archive(archive_file(tmp_path,messages))
-    assert result['counts']=={'batches':2,'messages':5,'user':2,'assistant':3,'assistant_with_text':2}
+    assert result['counts']=={'sessions':1,'batches':2,'messages':5,'user':2,'assistant':3,'assistant_with_text':2,'text_parts':4,'visible_text_chars':20,'tool':1,'reasoning':1,'unknown_parts':0,'masked_messages':0,'anomalies':0}
     assert [len(batch['assistant']) for batch in result['batches']]==[2,1]
     assert result['batches'][0]['assistant'][0]['text']=='第一批答复'
     assert result['batches'][0]['assistant'][1]['text']==''
     assert result['historical_memory_evidence'] is False
     assert '不可展示' not in json.dumps(result,ensure_ascii=False)
+
+def test_archive_redaction_parent_chain_and_replay_provenance(tmp_path):
+    high=['6222021234567890123','11010119900101001X','sk-'+'synthetic0123456789abcdef']
+    messages=[
+        archive_message('u1','user',1000,[{'type':'text','text':'我偏好简短回答；银行卡号：'+high[0]+'；身份证号：'+high[1]+'；API Key='+high[2]}]),
+        archive_message('a1','assistant',1000,[{'type':'text','text':'可展示答复'},{'type':'tool','tool':'read','state':{'output':'不应进入浏览结果'}}],'u1'),
+        archive_message('a2','assistant',1001,[{'type':'reasoning','text':'不应展示的内部思考'}],'a1'),
+    ]
+    path=archive_file(tmp_path,messages)
+    result=inspect_chat_archive(path)
+    encoded=json.dumps(result,ensure_ascii=False)
+    assert all(v not in encoded for v in high), 'high-risk values must be masked before IPC'
+    assert '我偏好简短回答' in encoded
+    assert result['counts']['tool']==1 and result['counts']['reasoning']==1
+    assert result['counts']['sessions']==1 and result['session_id']=='session-1'
+    assert result['batches'][0]['assistant'][1]['parent_id']=='a1'
+    assert result['batches'][0]['assistant'][1]['parts']=={'reasoning':1}
+    assert result['counts']['masked_messages']==1
+    assert '不应' not in encoded
+    svc=Service(tmp_path/'replay');base=create(svc)
+    q=dict(op='replay_batch',id=base['id'],revision=base['revision'],path=str(path),sha256=result['sha256'],batch=1,adopt_user_messages=True)
+    saved=svc.call(q)
+    source=saved['turns'][0]['replay_source']
+    assert source['session_id']=='session-1' and source['message_id']=='u1'
+    assert source['assistant_ids']==['a1','a2']
+    assert saved['turns'][0]['processing']=='REEXECUTED_LOCAL'
+    assert saved['snapshot']['current']['preference']['value']=='我偏好简短回答'
+    assert all(v.encode() not in svc.db.execute('SELECT state FROM experiments').fetchone()[0].encode() for v in high)
+    record=svc.call(dict(op='role_memory',id=saved['id']))
+    assert all(v not in record['text'] for v in high)
+    assert svc.call(q)['revision']==saved['revision'], 'same source batch must be idempotent'
+    with pytest.raises(ValueError):svc.call({**q,'sha256':'0'*64})
+    with pytest.raises(ValueError):svc.call(dict(op='ingest',id=saved['id'],revision=saved['revision'],input='我偏好长回复',request_id='forged',replay_source=source))
+
+
+def test_archive_rejects_mismatched_part_and_reports_unknown_type(tmp_path):
+    msg=archive_message('u1','user',1000,[{'type':'text','text':'输入','messageID':'different'}])
+    with pytest.raises(ValueError):inspect_chat_archive(archive_file(tmp_path,[msg]))
+    msg['parts']=[{'type':'text','text':'输入'},{'type':'future-format','text':'不应当作助手回答'}]
+    result=inspect_chat_archive(archive_file(tmp_path,[msg]))
+    assert result['anomalies'] and result['counts']['unknown_parts']==1
+    assert '不应当作' not in json.dumps(result,ensure_ascii=False)
+
 
 def test_chat_archive_rejects_unsafe_members(tmp_path,monkeypatch):
     for member in ('../escape.json','/absolute.json','chat\\export\\session.json'):

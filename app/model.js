@@ -12,7 +12,7 @@
   }
   const credentialPattern=new RegExp("(?:https?://[^\\s/@]+@|[?&](?:api[_-]?key|api[_-]?token|access[_-]?token|password|client[_-]?secret)=[^&#\\s]+|\\bsk-[A-Za-z0-9_-]{16,}|\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|A[KS]IA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{15,})|\\b(?:Bearer|Basic)\\s+[A-Za-z0-9._~+/-]{8,}=*|\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|(?:password|passcode|pwd|otp|verification[_ -]?code|api[_ -]?(?:key|token)|access[_ -]?token|auth[_ -]?token|client[_ -]?secret|密码|口令|动态码|(?:短信)?验证码)[\\\"\\']?\\s*(?:[=:：]|为|是)\\s*[\\\"\\']?[^\\s\\\"\\',;，；]{4,})","i");
   const publicIdPattern=new RegExp("\\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\\b","gi");
-  const sensitiveNumberPattern=new RegExp("(?<![A-Za-z0-9+])\\+[1-9](?:[\\s().-]*\\d){9,14}(?!\\d)|(?<![A-Za-z0-9])(?:\\d[\\s-]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\\s*[:=：]?\\s*[0-9xX* -]{4,}|(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)[\\\"\\']?\\s*[:=：]?\\s*[\\\"\\']?\\s*\\+?\\(?(?:\\d[\\s().-]*){7,15}(?!\\d)","i");
+  const sensitiveNumberPattern=new RegExp("(?<![A-Za-z0-9+])\\+[1-9](?:[\\s().-]*\\d){9,14}(?!\\d)|(?<![A-Za-z0-9])(?:\\d[\\s-]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\\s*(?:[:=：]|是|为)?\\s*[0-9xX* -]{4,}|(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)[\\\"\\']?\\s*(?:[:=：]|是|为)?\\s*[\\\"\\']?\\s*\\+?\\(?(?:\\d[\\s().-]*){7,15}(?!\\d)","i");
   function isSensitive(value){
     if(value&&typeof value==='object')return Object.entries(value).some(([key,item])=>isProtectedKey(key)||isSensitive(item));
     const text=String(value).normalize('NFKC');
@@ -23,7 +23,7 @@
     if(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/.test(text))return 'contact';
     if(isSensitive(text)&&/\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|(?:手机号?|联系|电话|phone|mobile|telephone)[^\n]{0,20}\d/i.test(text))return 'contact';
     for(const [category,pattern]of [
-      ['address',/(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|home address|I live at)\s*[:：是为]?\s*\S+/i],
+      ['address',/(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|我住在|home address|I live at)\s*[:：是为]?\s*\S+/i],
       ['health',/(?:我(?:的诊断|患有|确诊|有过敏|的病史|的健康)|my (?:diagnosis|medical history)|I (?:have been diagnosed|suffer from))/i],
       ['family',/(?:我的?(?:家属|配偶|孩子|子女|父亲|母亲)|my (?:spouse|child|daughter|son|parent))/i]])if(pattern.test(text))return category;
     return null;
@@ -31,7 +31,7 @@
   function forbiddenPersonal(value){
     const original=String(value).normalize('NFKC');if(credentialPattern.test(original))return true;
     const text=original.replace(publicIdPattern,'').replace(/(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)/g,'');
-    return /(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}/.test(text);
+    return /(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*(?:[:=：]|是|为)?\s*[0-9xX* -]{4,}/.test(text);
   }
   function personalDraft(clock=()=>Date.now()){
     let pending=null;
@@ -47,7 +47,7 @@
   }
   function personalPayload(p){
     const r=p?.retention;
-    return p?.data_type==='personal_information'&&p.privacy==='restricted'&&typeof p.value==='string'&&!forbiddenPersonal(p.value)&&object(r)&&Object.keys(r).sort().join(',')==='category,purpose,request_id,scope,use'&&['contact','address','health','family'].includes(r.category)&&typeof r.purpose==='string'&&r.purpose.length>=2&&r.purpose.length<=120&&!isSensitive(r.purpose)&&typeof r.scope==='string'&&/^[A-Za-z0-9_./-]{1,96}$/.test(r.scope)&&/^[a-f0-9]{32}$/.test(r.request_id)&&r.use==='local_only';
+    return p?.data_type==='personal_information'&&p.privacy==='restricted'&&typeof p.value==='string'&&!forbiddenPersonal(p.value)&&object(r)&&Object.keys(r).sort().join(',')==='category,purpose,request_id,scope,use'&&['contact','address','health','family','background'].includes(r.category)&&typeof r.purpose==='string'&&r.purpose.length>=2&&r.purpose.length<=120&&!isSensitive(r.purpose)&&typeof r.scope==='string'&&/^[A-Za-z0-9_./-]{1,96}$/.test(r.scope)&&/^[a-f0-9]{32}$/.test(r.request_id)&&r.use==='local_only';
   }
   const sourceNames={owner:'主人自述',stranger:'未核验第三方',push:'外部推送',system:'外部系统内容'};
   function label(k){
@@ -220,7 +220,7 @@
     const y={current:1.7,task:4.3,completed:4.3,history:-2.5,pending:-.5,retired:-4.3}[state];
     return [Math.cos(angle)*radius,y+((h>>>8)%100)/130,Math.sin(angle)*radius];
   }
-  function graph(ds,index,{category:cat='all',state:filter='all',privateVisible=true}={}){
+  function graph(ds,index,{category:cat='all',state:filter='all',privateVisible=true,includeVersions=false}={}){
     const f=ds.data.frames[index];assert(f,'无效轮次');
     if(!privateVisible)return {nodes:[],edges:[],count:0};
     const evidence=new Map((f.governance?.versions||[]).map(r=>[r.version_id,r]));
@@ -233,6 +233,14 @@
       edges.push({from:'role:'+ds.role,to:id,type:'主体归属'});
     }
     const factCount=nodes.length;
+    if(includeVersions)for(const r of evidence.values()){
+      if(!r.payload||!['history','superseded','quarantine'].includes(r.lifecycle)||nodes.some(n=>n.evidence?.version_id===r.version_id))continue;
+      const historicalState=r.lifecycle==='quarantine'?'pending':'history';if(filter!=='all'&&filter!==historicalState)continue;
+      const c=category(r.key,r.payload);if(cat!=='all'&&cat!==c)continue;
+      nodes.push({id:'version:'+r.version_id,key:r.key,part:r.part,state:historicalState,category:c,
+        label:label(r.key)+' · '+(historicalState==='history'?'历史':'隔离')+' v'+r.revision,payload:r.payload,evidence:r,
+        position:position(r.key,historicalState),changed:false,transient:false});
+    }
     // 公开数据已清除删除载荷；仅把实际登记的无值证据表示为元数据节点。
     // 不恢复事实、不计入保留事实数，也不将历史准入当作当前可用内容。
     if(filter==='all'||filter==='retired')for(const r of evidence.values()){
@@ -244,11 +252,11 @@
     }
     for(const n of nodes)if(n.part==='history'&&n.key.endsWith('__previous')){
       const current=nodes.find(x=>x.part==='current'&&x.key===n.key.replace(/__previous$/,''));
-      if(current)edges.push({from:n.id,to:current.id,type:'已存储历史版本'});
+      if(current&&!current.evidence?.relations.some(r=>r.parent===n.evidence?.version_id&&r.child===current.evidence.version_id&&r.relation==='SUPERSEDE'))edges.push({from:n.id,to:current.id,type:'已存储历史版本'});
     }
     const byVersion=new Map(nodes.filter(n=>n.evidence).map(n=>[n.evidence.version_id,n]));
-    for(const n of nodes)for(const rel of n.evidence?.relations||[])if(rel.child===n.evidence.version_id&&byVersion.has(rel.parent)&&['DERIVE','SUPERSEDE'].includes(rel.relation)){
-      const from=byVersion.get(rel.parent).id;if(!edges.some(e=>e.from===from&&e.to===n.id))edges.push({from,to:n.id,type:rel.relation});
+    for(const n of nodes)for(const rel of n.evidence?.relations||[])if(rel.child===n.evidence.version_id&&byVersion.has(rel.parent)&&['DERIVE','SUPERSEDE','CONTRADICT'].includes(rel.relation)){
+      const from=byVersion.get(rel.parent).id;if(!edges.some(e=>e.from===from&&e.to===n.id&&e.type===rel.relation))edges.push({from,to:n.id,type:rel.relation,unresolved:rel.unresolved});
     }
     // 退出标记只含字段名，没有撤销原值；不是新增长期记忆。
     if(filter==='all'||filter==='retired')for(const k of f.diff.removed){

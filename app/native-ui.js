@@ -1,4 +1,4 @@
-/* Desktop model experiments. Static Pages remains a network-free simulation. */
+/* Windows model experiments with a separate offline simulation. */
 (function(root){
 'use strict';
 async function ruleDraft(text,name,kind){
@@ -59,7 +59,7 @@ if(!root.__TAURI__?.core||!root.document)return;
 const doc=root.document,invoke=(c,args={})=>root.__TAURI__.core.invoke(c,args),entry=doc.getElementById('native-open');
 entry.hidden=false;
 let dialog,ui={},exp=null,profiles=[],profileId=null,frameIndex=0,selected=null,graph=null,running=null,working=false;
-const personalDraft=root.MemoryModel.personalDraft();let personalApproval=null,personalTimer=null,temporaryTimer=null;
+let temporaryTimer=null,graphExperiment=null;
 let builtin=null,draft=null,preview=null,view='setup',guideStep=0,contextExperiment=null,script=null,archive=null,archiveIndex=0;
 const guide=[
  ['连接模型','保存供应商、API 地址、Key 和模型名称。测试连接由你主动执行，可能计费。','打开模型配置'],
@@ -87,8 +87,7 @@ function busy(value){
  for(const el of dialog.querySelectorAll('[data-idle]'))el.disabled=value;
  for(const name of ['rename','remove','reset','export'])ui[name].disabled=value||!exp;
  ui.new.disabled=value||!draft;ui.rulesDefault.disabled=value||!builtin;ui.rulesAccept.disabled=value||!preview;
- const last=exp?.turns.at(-1),unresolved=last?.candidates.some((_,i)=>!Object.hasOwn(last.results,String(i)));
- ui.send.disabled=value||!exp||!!exp.pending||!!unresolved;
+ ui.send.disabled=value||!exp||!!exp.pending;
  ui.cancel.disabled=!running?.busy;
  ui.fit.disabled=value||!graph||graph.destroyed;if(script)renderScript();
 }
@@ -97,15 +96,14 @@ async function libraries(){
  const rows=await call({op:'list'});ui.experiments.replaceChildren(new Option('选择已保存实验',''),...rows.map(x=>new Option(x.name,x.id)));ui.experiments.value=exp?.id||'';
  profiles=await call({op:'profiles'});ui.models.replaceChildren(new Option('选择模型配置',''),...profiles.map(x=>new Option(x.name+' · '+x.model,x.id)));ui.models.value=profileId&&profiles.some(p=>p.id===profileId)?profileId:'';updateSetup();
 }
-async function open(id){clearPersonal();if(!id)return;const loaded=await call({op:'open',id});clearPreview();exp=loaded;contextExperiment=null;frameIndex=Math.max(0,exp.frames.length-1);selected=null;ui.renameName.value=exp.name;ui.records.open=false;setView(view==='setup'?'chat':view);notice('已打开本机实验，继续使用创建时保存的守则。');}
+async function open(id){if(!id)return;const loaded=await call({op:'open',id});clearPreview();exp=loaded;contextExperiment=null;frameIndex=Math.max(0,exp.frames.length-1);selected=null;ui.renameName.value=exp.name;ui.records.open=false;setView(view==='setup'?'chat':view);notice('已打开本机实验，继续使用创建时保存的守则。');}
 function updateSetup(){const p=profiles.find(x=>x.id===profileId);ui.modelSummary.textContent=p?'下一请求：'+p.name+' · '+p.model:'尚未选择模型，请在“开始实验”中配置或选择。';ui.createSummary.textContent=(p?'模型：'+p.name+' · '+p.model:'尚未选择模型')+' · 守则：'+(draft?sourceName(draft):'未加载');}
 function sourceName(policy){return policy.source?`${policy.source.kind==='builtin'?'应用内置':'自定义'} · ${policy.source.name}`:'来源未记录';}
 function useRules(policy){draft=policy;preview=null;ui.rules.value=policy.text;ui.rulesPreview.hidden=true;ui.rulesSelected.textContent=sourceName(policy)+' · SHA-256 '+policy.sha256;updateSetup();}
 async function previewRules(value,name){preview=null;ui.rulesPreview.hidden=true;const checked=await ruleDraft(value,name,'custom');preview=checked;ui.rulesPreviewText.textContent=checked.text;ui.rulesPreviewHash.textContent=sourceName(checked)+' · SHA-256 '+checked.sha256;ui.rulesPreview.hidden=false;}
-function clearPersonal(){personalDraft.clear();personalApproval=null;if(personalTimer)root.clearTimeout(personalTimer);personalTimer=null;if(ui.personalValue){ui.personalValue.value='';ui.personalPurpose.value='';ui.personalPreview.replaceChildren();ui.personalPreview.hidden=true;}}
 function setView(next){
  view=next;ui.setup.hidden=view!=='setup';ui.archivePanel.hidden=view!=='archive';ui.workspace.hidden=['setup','archive'].includes(view);ui.footer.hidden=['setup','archive'].includes(view);
- ui.graph.hidden=view!=='graph';ui.conversation.hidden=view==='graph';ui.filter.hidden=view!=='graph';ui.fit.hidden=view!=='graph';ui.graphNote.hidden=view!=='graph';ui.composer.hidden=!['chat','answer'].includes(view);ui.sendOptions.hidden=ui.composer.hidden;ui.queryOptions.hidden=ui.composer.hidden;
+ ui.graph.hidden=view!=='graph';ui.relation.hidden=view!=='graph';ui.graphHelp.hidden=view!=='graph';ui.conversation.hidden=view==='graph';ui.filter.hidden=view!=='graph';ui.fit.hidden=view!=='graph';ui.graphNote.hidden=view!=='graph';ui.composer.hidden=!['chat','answer'].includes(view);ui.sendOptions.hidden=ui.composer.hidden;ui.queryOptions.hidden=ui.composer.hidden;
  for(const [name,mode]of [['startView','setup'],['archiveView','archive'],['chatView','chat'],['evolutionView','evolution'],['graphView','graph'],['answerView','answer']])ui[name].setAttribute('aria-pressed',String(mode===view));
  render();if(view==='archive')renderArchive();graph?.setPaused(view!=='graph');
 }
@@ -114,10 +112,10 @@ function dismissGuide(){ui.guide.hidden=true;try{root.localStorage?.setItem('mem
 
 async function recoverSaved(id,error){
  try{exp=await call({op:'open',id});frameIndex=Math.max(0,exp.frames.length-1);render();}
- catch(recovery){exp=null;selected=null;graph?.dispose();graph=null;render();throw Error(`${error}；保存状态无法核对：${recovery}。请重新打开实验。`);}
+ catch(recovery){exp=null;selected=null;graph?.dispose();graph=null;graphExperiment=null;render();throw Error(`${error}；保存状态无法核对：${recovery}。请重新打开实验。`);}
  throw error;
 }
-async function mutate(op,extra={}){clearPersonal();if(!exp)throw Error('请先新建实验');const id=exp.id;try{exp=await call({op,id,revision:exp.revision,...extra});}catch(error){await recoverSaved(id,error);}frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
+async function mutate(op,extra={}){if(!exp)throw Error('请先新建实验');const id=exp.id;try{exp=await call({op,id,revision:exp.revision,...extra});}catch(error){await recoverSaved(id,error);}frameIndex=Math.max(0,exp.frames.length-1);render();if(op==='rename'){ui.renameName.value=exp.name;await libraries();}else{const last=exp.turns.at(-1),left=last?.candidates.filter((_,i)=>!Object.hasOwn(last.results,String(i))).length||0;notice(left?`已保存，尚有 ${left} 项模型建议待处理。`:'本轮操作已保存，可继续对话。');}}
 function render(){
  const sameContext=contextExperiment===exp?.id;
  const chosen=new Set(sameContext?Array.from(ui.context.selectedOptions,o=>o.value):[]);
@@ -134,19 +132,21 @@ function render(){
  if(!exp){
   ui.renameName.value='';ui.currentRulesText.textContent='';ui.currentRulesHash.textContent='';ui.policy.textContent='';ui.policy.title='';ui.recover.hidden=true;
   ui.position.max='0';ui.position.value='0';ui.round.textContent='尚无对话';ui.send.disabled=true;
-  ui.memories.replaceChildren();ui.details.replaceChildren();clearPreview();
+  ui.memories.replaceChildren();ui.details.replaceChildren();ui.memoryPrivacy.textContent='';ui.memoryText.textContent='';ui.memoryPath.textContent='';ui.memoryDigest.textContent='';ui.memoryVerification.textContent='';clearPreview();
   renderScript();ui.conversation.replaceChildren(text('h2','开始实验'),text('p','先在“开始实验”中选择模型与守则，再创建实验。无需 API 的体验可选择“离线示例”。'));
   busy(working);return;
  }
  ui.policy.textContent='本机自动保存 · '+sourceName(exp.rules)+' · '+exp.rules.sha256.slice(0,12);ui.policy.title='MODEL_EXPERIMENT · Python 治理内核 · SHA-256 '+exp.rules.sha256;
  ui.recover.hidden=!exp.pending;ui.send.disabled=!!exp.pending;
  ui.position.max=String(Math.max(0,exp.frames.length-1));ui.position.value=String(frameIndex);ui.round.textContent=exp.frames.length?`第 ${frameIndex+1} 轮 · 已保存 ${exp.frames.length} 轮`:'尚无对话';
- ui.personalPanel.hidden=!exp;
+ ui.memoryPrivacy.textContent=Object.values(exp.snapshot.current).some(p=>p.retention)?'敏感个人信息已核验保存至 '+(exp.memory_file?.path||'未记录位置')+'。本机有权限者可读取，请谨慎共享；不会自动发送模型。':'';
+ ui.memoryPath.textContent=exp.memory_file?.path||'文件尚未核验';ui.memoryDigest.textContent=exp.memory_file?.sha256||'';ui.memoryText.textContent='';
+ const savedDigest=exp.frames[frameIndex]?.markdown_sha256;ui.memoryVerification.textContent=savedDigest?(frameIndex===exp.frames.length-1&&savedDigest===exp.memory_file?.sha256?'本轮 Markdown 已读回核验':'历史轮次已登记 Markdown 摘要；当前文件为最新状态'):'本轮 Markdown 核验未记录';
  renderScript();
  ui.conversation.replaceChildren();const turn=exp.turns[frameIndex],frame=exp.frames[frameIndex];
  if(exp.pending)ui.conversation.append(text('h2','尚未结束的请求'),text('p',exp.pending.input),text('small','输入已保存，完整回复尚未提交。确认其他窗口没有处理此请求后，可结束请求并恢复。'));
- if(turn){ui.conversation.append(text('small',`实验第 ${frameIndex+1} 轮 · 角色 ${exp.role} · ${turn.status==='local'?'LOCAL_OPERATION':'MODEL_EXPERIMENT'}`));ui.conversation.append(text('h2',view==='evolution'?'本轮输入':'本轮对话'),text('small','你'),text('p',turn.input));
- const reply=[text('small',turn.status==='local'?'本地操作 · 未调用模型':'AI 回复 · '+(turn.status==='complete'?'已收到':({cancelled:'已取消',failed:'请求失败',interrupted:'上次中断'})[turn.status]||'未记录')),text('p',turn.status==='local'?'本轮为本人确认的本地操作，没有请求模型。':turn.reply||'本轮未保存完整回复，未提交记忆')];
+ if(turn){ui.conversation.append(text('small',`实验第 ${frameIndex+1} 轮 · 角色 ${exp.role} · ${turn.processing|| (turn.status==='local'?'LOCAL_OPERATION':'MODEL_EXPERIMENT')}`));ui.conversation.append(text('h2',view==='evolution'?'本轮输入':'本轮对话'),text('small','你'),text('p',turn.input));
+ const reply=[text('small',turn.status==='local'?'本地操作 · 未调用模型':'AI 回复 · '+(turn.status==='complete'?'已收到':({cancelled:'已取消',failed:'请求失败',interrupted:'上次中断'})[turn.status]||'未记录')),text('p',turn.status==='local'?'本轮由本地内核处理，没有请求模型。':turn.reply||'本轮未保存完整回复，未提交记忆')];
  if(view==='evolution'){const d=doc.createElement('details');d.append(text('summary','查看本轮 AI 回复'),...reply);ui.conversation.append(d);}else ui.conversation.append(...reply);
  if(frame&&(view==='evolution'||turn.status==='local')){ui.conversation.append(text('h2','本轮实际变化'));if(!['added','changed','removed'].some(k=>frame.diff[k].length))ui.conversation.append(text('p','本轮记忆快照没有变化，原因以实际裁决记录为准。'));for(const d of frame.decisions)ui.conversation.append(text('p',operationName(d.action)+'：'+d.reason));for(const kind of ['added','changed','removed'])for(const path of frame.diff[kind]){const [part,key]=path.split('.');const old=frame.before[part]?.[key]?.value,next=frame.after[part]?.[key]?.value;ui.conversation.append(text('p',`${root.MemoryModel.label(key)}：${old??'未记录 / 已清除'} → ${next??'退出 / 已清除'}`));}}
  const usage=doc.createElement('details');usage.append(text('summary','模型与用量'),text('p',turn.model?.model?'本轮模型：'+(turn.model.name||'未记录')+' · '+turn.model.model:'本轮模型未记录'),text('small',turn.usage?'回复 Token：'+JSON.stringify(turn.usage):'回复 Token 用量未知'));
@@ -209,9 +209,10 @@ function render(){
  if(view!=='answer')ui.conversation.append(context);ui.conversation.append(usage);
  }
  const snapshot=frame?.after||exp.snapshot,graphModel=currentModel(),nodes=new Map((graphModel?.nodes||[]).map(n=>[n.id,n]));ui.memories.replaceChildren();
- for(const [part,group]of Object.entries(snapshot))for(const [key,p]of Object.entries(group)){const id=`${exp.role}/${part}/${key}/${p.version}`;const n=nodes.get(id);if(frame&&!n)continue;const b=button(`${root.MemoryModel.label(key)}：${p.value??'原值已清除'} · ${root.MemoryModel.states[part]?.name||part}`,()=>{if(n){selected=n.id;details(n.key,n.payload);graph?.select(n.id);graph?.focus(n.id);}});ui.memories.append(b);}
+ const listed=view==='graph'?(graphModel?.nodes||[]):Object.entries(snapshot).flatMap(([part,group])=>Object.entries(group).map(([key,p])=>nodes.get(`${exp.role}/${part}/${key}/${p.version}`)).filter(Boolean));
+ for(const n of listed){const b=button(`${n.label}：${n.payload?.value??'原值已清除'} · ${root.MemoryModel.states[n.state]?.name||n.state}`,()=>selectNode(n));b.value=n.id;b.setAttribute('aria-pressed',String(n.id===selected));ui.memories.append(b);}
  if(!ui.memories.children.length)ui.memories.append(text('p','本轮没有已保存记忆。模型回复不代表写入成功。'));
- if(selected){const n=nodes.get(selected);if(n)details(n.key,n.payload||{value:'原值已清除',source:'未记录'});else{selected=null;ui.details.textContent='所选记忆已退出当前快照或筛选范围。';}}
+ if(selected){const n=nodes.get(selected);if(n)details(n.key,n.payload||{value:'原值已清除',source:'未记录'},n);else{selected=null;ui.details.textContent='所选记忆已退出当前快照或筛选范围。';}}
  else ui.details.replaceChildren();
  if(!exp.frames.length&&ui.graph.hidden)graph?.setData({nodes:[],edges:[],count:0},exp.role,{animate:false});
  graphData(graphModel);busy(working);
@@ -251,23 +252,42 @@ function renderScript(){
  ui.scriptUse.disabled=working||!exp||!!restricted;
 }
 function operationName(value){return ({set:'建议保存',derive:'建议派生',retire:'建议失效',delete:'建议删除',review:'建议复核',ADD:'新增',UPDATE:'更正',MERGE:'合并',REJECT:'拒绝',NO_CHANGE:'无写入',RETIRE:'退出当前状态',DELETE:'删除',PENDING:'隔离待核实'})[value]||value;}
-function currentModel(){if(!exp?.frames.length)return null;return root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:view==='graph'?(ui.filter.value||'all'):'all'});}
-function details(key,p){
+function currentModel(){if(!exp?.frames.length)return null;const m=root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},frameIndex,{state:view==='graph'?(ui.filter.value||'all'):'all',includeVersions:view==='graph'});if(view==='graph'&&ui.relation.value&&ui.relation.value!=='all')m.edges=m.edges.filter(e=>e.type===ui.relation.value);return m;}
+function selectNode(n){selected=n.id;details(n.key,n.payload||{value:'原值已清除',source:'未记录'},n);graph?.select(n.id);if(view==='graph')graph?.focus(n.id);for(const b of ui.memories.children)b.setAttribute('aria-pressed',String(b.value===n.id));}
+const relationName=value=>({SUPERSEDE:'更正',DERIVE:'派生',CONTRADICT:'冲突'})[value]||value;
+function details(key,p,node){
  const base=key.replace(/__previous$/,''),f=exp.frames[frameIndex];
  const versions=f?.governance.versions.filter(r=>r.key===base)||[];
  ui.details.replaceChildren(text('h2',root.MemoryModel.label(key)),text('p',p.value),text('p','来源：'+(root.MemoryModel.sourceNames[p.source]||p.source||'未记录')));
  const advanced=doc.createElement('details');advanced.append(text('summary','来源、版本与派生记录'),text('pre',JSON.stringify(versions,null,2)));
  for(const r of versions){const at=exp.frames.findIndex(f=>f.governance.versions.some(v=>v.version_id===r.version_id));if(at>=0)advanced.append(button('查看版本首次登记轮次 '+(at+1),()=>{frameIndex=at;render();}));}
  ui.details.append(advanced);
- if(p.retention){ui.details.append(text('p','本地保存用途：'+p.retention.purpose+'。不附带到模型或用作派生依据。'),button('删除这条私人记忆',async()=>{if(root.confirm('删除本实验内该私人记忆及可控历史投影？既有外部导出不受控制。'))await mutate('privacy_delete',{key:base,confirmed:true});}));return;}
+ const record=node?.evidence||versions.find(r=>r.revision===p.version),relations=new Map();
+ if(record){
+  ui.details.append(text('h2','关系'));
+  for(const r of versions)for(const rel of r.relations)if(rel.parent===record.version_id||rel.child===record.version_id)relations.set(JSON.stringify(rel),rel);
+  for(const rel of record.relations||[])relations.set(JSON.stringify(rel),rel);
+  const all=f.governance.versions;
+  for(const rel of relations.values()){
+   const other=all.find(r=>r.version_id===(rel.parent===record.version_id?rel.child:rel.parent));
+   if(!other)continue;
+   const title=`${rel.parent===record.version_id?'→':'←'} ${relationName(rel.relation)} · ${root.MemoryModel.label(other.key)} · v${other.revision}${rel.unresolved?' · 未解决':''}`;
+   ui.details.append(button(title,()=>{setView('graph');ui.filter.value='all';ui.relation.value='all';render();const target=currentModel()?.nodes.find(n=>n.evidence?.version_id===other.version_id);if(target)selectNode(target);}));
+  }
+  if(!relations.size)ui.details.append(text('p','未登记版本间关系。'));
+  const sources=record.source||[];
+  for(const source of sources)ui.details.append(text('small',`来源：${source.source_kind} · ${source.source_turn===null?'轮次未记录':'第 '+source.source_turn+' 轮'}`));
+ }
  const current=exp.snapshot.current?.[base];
+ if(p.retention){ui.details.append(text('p','本地保存用途：'+p.retention.purpose+'。不附带到模型或用作派生依据。'));if(frameIndex===exp.frames.length-1&&current?.version===p.version)ui.details.append(button('删除这条私人记忆',async()=>{await mutate('privacy_delete',{key:base,version:p.version,confirmed:true});}));return;}
  const version=versions.find(r=>r.part==='current'&&r.revision===p.version&&r.lifecycle==='current');
  if(frameIndex!==exp.frames.length-1||!current||current.version!==p.version||!version)return;
  ui.details.append(button('更正记忆',()=>{setView('chat');ui.input.value='请更正我在本实验保存的「'+root.MemoryModel.label(base)+'」：';ui.input.focus();}),
-   button('删除记忆',async()=>{if(root.confirm('删除当前实验中这条记忆及可控历史投影？原始聊天和既有外部导出不受控制。'))await mutate('memory_delete',{key:base,version_id:version.version_id,confirmed:true});}));
+   button('删除记忆',async()=>{await mutate('memory_delete',{key:base,version_id:version.version_id,confirmed:true});}));
 }
-function graphData(m=currentModel()){if(ui.graph.hidden||graph?.destroyed)return;if(!m){graph?.setData({nodes:[],edges:[],count:0},exp?.role||'LOCAL',{animate:false});graph?.select(null);ui.graphNote.textContent='尚无治理记录，二维记忆列表仍可使用。';return;}if(!graph){try{graph=new root.MemoryGraph.GraphView(ui.graph,{states:root.MemoryModel.states,onSelect:id=>{const n=currentModel()?.nodes.find(n=>n.id===id);if(n){selected=n.id;details(n.key,n.payload||{value:'原值已清除',source:'未记录'});graph?.select(id);}},onUnavailable:m=>{ui.graphNote.textContent=m;ui.fit.disabled=true;}});graph.configure({motion:!root.matchMedia('(prefers-reduced-motion: reduce)').matches,low:false});}catch{ui.graphNote.textContent='WebGL不可用，请使用记忆列表和时间轴。';return;}}
- ui.graphNote.textContent='';graph.setData(m,exp.role,{animate:false});graph.select(m.nodes.some(n=>n.id===selected)?selected:null);graph.resizeToHost();graph.request();}
+function graphData(m=currentModel()){if(ui.graph.hidden||graph?.destroyed)return;if(!m){graph?.setData({nodes:[],edges:[],count:0},exp?.role||'LOCAL',{animate:false});graph?.select(null);ui.graphNote.textContent='尚无治理记录，二维记忆列表仍可使用。';return;}if(!graph){try{graph=new root.MemoryGraph.GraphView(ui.graph,{states:root.MemoryModel.states,onSelect:id=>{const n=currentModel()?.nodes.find(n=>n.id===id);if(n){selectNode(n);}},onUnavailable:m=>{ui.graphNote.textContent=m;ui.fit.disabled=true;}});graph.configure({motion:!root.matchMedia('(prefers-reduced-motion: reduce)').matches,low:false});}catch{ui.graphNote.textContent='WebGL不可用，请使用记忆列表和时间轴。';return;}}
+ if(graphExperiment!==exp.id){graph.setCatalog(exp.frames.flatMap((_,i)=>root.MemoryModel.graph({role:exp.role,data:{frames:exp.frames}},i,{includeVersions:true}).nodes));graphExperiment=exp.id;}
+ ui.graphNote.textContent=m.nodes.length?'':'本轮没有符合筛选条件的记忆。';graph.setData(m,exp.role,{animate:false});graph.select(m.nodes.some(n=>n.id===selected)?selected:null);graph.resizeToHost();graph.request();}
 function createDialog(){
  dialog=doc.createElement('dialog');dialog.className='native-lab';dialog.setAttribute('aria-label','AI Memory Lab 工作区');
  // Static markup only. All model/user text uses textContent.
@@ -284,23 +304,23 @@ function createDialog(){
  <details id="nl-rules-panel" open><summary>选择记忆守则</summary><p id="nl-rules-selected" class="native-digest"></p><div class="native-actions"><button id="nl-rules-default" data-idle>使用内置守则</button><button id="nl-rules-import" data-idle>导入 Markdown</button></div><label>新实验守则草稿<textarea id="nl-rules" rows="5" data-idle></textarea></label><div class="native-actions"><button id="nl-rules-review" data-idle>预览粘贴内容</button><button id="nl-rules-undo" data-idle>还原已选内容</button></div>
  <section id="nl-rules-preview" class="native-rule-preview" aria-label="待确认守则" hidden><h2>确认自定义守则</h2><p id="nl-rules-preview-hash" class="native-digest"></p><pre id="nl-rules-preview-text"></pre><button id="nl-rules-accept" data-idle>确认用于新实验</button><button id="nl-rules-cancel" data-idle>取消</button></section>
  <p>选择或编辑守则只影响新实验。守则仅作为本实验的治理配置，不能扩大应用权限；实际写入由内核裁决。</p><details id="nl-current-rules" hidden><summary>当前实验的固定守则</summary><p id="nl-current-rules-hash" class="native-digest"></p><pre id="nl-current-rules-text"></pre></details></details></div>
- <div class="native-create"><label>新实验名称<input id="nl-name" placeholder="例如：偏好更正实验" maxlength="80" data-idle></label><button id="nl-new" data-idle>创建实验</button><span id="nl-create-summary"></span></div></section>
+ <div class="native-create"><label>新实验名称<input id="nl-name" placeholder="例如：偏好更正实验" maxlength="80" data-idle></label><label>本地角色标识<input id="nl-role" value="LOCAL" pattern="[A-Z][A-Z0-9_]{0,39}" maxlength="40" data-idle></label><button id="nl-new" data-idle>创建实验</button><span id="nl-create-summary"></span></div></section>
  <details class="native-script"><summary>官方 28 轮脚本</summary><div class="native-actions"><button id="nl-script-import" data-idle>导入官方原件</button><input id="nl-script-file" type="file" accept=".md,text/markdown" hidden><button id="nl-script-replay" data-idle>查看独立模拟演示 · SIMULATED</button><button id="nl-script-clear" data-idle>清除本次导入</button></div><section id="nl-script-panel" hidden><small id="nl-script-hash" class="native-digest"></small><div class="native-script-browse"><div class="native-script-reader"><label>当前脚本轮次<select id="nl-script-round" data-idle></select></label><pre id="nl-script-preview"></pre><p id="nl-script-state"></p><button id="nl-script-use" data-idle>放入输入框，不自动发送</button></div><div id="nl-script-grid" class="native-script-grid" role="group" aria-label="完整28轮目录"></div></div></section></details>
- <section id="nl-archive-panel" class="native-archive" aria-label="本机会话 ZIP 浏览" hidden><div class="native-archive-bar"><div><h2>本机会话</h2><small id="nl-archive-meta"></small></div><div><button id="nl-archive-import" data-idle>选择 ZIP</button><button id="nl-archive-clear" data-idle>清除浏览</button></div></div><p class="native-archive-boundary">这里只读展示导出中的用户与助手文字。工具和内部片段不作为回答；没有记忆操作记录时，不推断历史记忆演化。导入内容不会进入实验、模型请求或发布包。</p><div class="native-archive-columns"><nav id="nl-archive-list" aria-label="会话批次"></nav><article id="nl-archive-detail"></article></div></section>
- <div id="nl-workspace" class="native-workspace" hidden><section><div class="native-view"><select id="nl-filter" aria-label="记忆状态筛选" data-idle><option value="all">全部状态</option><option value="current">当前</option><option value="task">未完成任务</option><option value="completed">已完成</option><option value="pending">待核实</option><option value="history">历史</option><option value="retired">已退出</option></select><button id="nl-fit" data-idle>全景</button><span id="nl-graph-note"></span></div><section id="nl-live" class="native-live" aria-label="当前模型响应（尚未保存）" hidden></section><div id="nl-conversation" class="native-conversation"></div><div id="nl-graph" class="native-graph" hidden></div></section><aside><h2>处理后的记忆</h2><div id="nl-memories"></div><div id="nl-details"></div><details id="nl-personal-panel"><summary>本地私人记忆</summary><form id="nl-personal-form"><label>信息类别<select id="nl-personal-category" data-idle><option value="contact">联系方式</option><option value="address">家庭住址</option><option value="health">健康自述</option><option value="family">家庭信息</option></select></label><label>本人提供的最少信息<textarea id="nl-personal-value" maxlength="500" rows="2" autocomplete="off" data-idle></textarea></label><label>必要保存用途<input id="nl-personal-purpose" maxlength="120" autocomplete="off" data-idle></label><button type="submit" data-idle>查看本地保存方案</button></form><div id="nl-personal-preview" hidden></div><small>仅保存到当前实验，不自动发送模型；密码、证件和银行账号等仍禁存。关闭、换话题或两分钟未确认会清空临时输入。</small></details></aside></div>
+ <section id="nl-archive-panel" class="native-archive" aria-label="本机会话 ZIP 浏览" hidden><div class="native-archive-bar"><div><h2>本机会话</h2><small id="nl-archive-meta"></small></div><div><button id="nl-archive-import" data-idle>选择 ZIP</button><button id="nl-archive-replay" data-idle>在新实验逐批重新治理</button><button id="nl-archive-clear" data-idle>清除浏览</button></div></div><p class="native-archive-boundary">这里只读展示导出中的用户与助手文字。工具和内部片段不作为回答；没有记忆操作记录时，不推断历史记忆演化。只读浏览不创建实验。主动重新治理另建本地实验，不调用模型，不把历史回答冒充本次结果；私人内容不进入发布包。</p><div class="native-archive-columns"><nav id="nl-archive-list" aria-label="会话批次"></nav><article id="nl-archive-detail"></article></div></section>
+ <div id="nl-workspace" class="native-workspace" hidden><section><div class="native-view"><select id="nl-filter" aria-label="记忆状态筛选" data-idle><option value="all">全部状态</option><option value="current">当前</option><option value="task">未完成任务</option><option value="completed">已完成</option><option value="pending">待核实</option><option value="history">历史</option><option value="retired">已退出</option></select><select id="nl-relation" aria-label="关系筛选" data-idle><option value="all">全部关系</option><option value="主体归属">角色归属</option><option value="SUPERSEDE">更正</option><option value="DERIVE">派生</option><option value="CONTRADICT">冲突</option></select><button id="nl-fit" data-idle>重置视角</button><span id="nl-graph-note"></span></div><section id="nl-live" class="native-live" aria-label="当前模型响应（尚未保存）" hidden></section><div id="nl-conversation" class="native-conversation"></div><div id="nl-graph" class="native-graph" role="img" aria-label="本轮已登记的记忆版本与关系；也可用右侧列表查看" hidden></div><small id="nl-graph-help" class="native-graph-help" hidden>左键拖动旋转 · 滚轮缩放 · 右键平移 · 点选节点聚焦；键盘可通过右侧记忆列表查看关系。</small></section><aside><h2>处理后的记忆</h2><div id="nl-memories"></div><div id="nl-details"></div><p id="nl-memory-privacy" role="status" aria-live="polite"></p><details id="nl-memory-file"><summary>角色记忆文件</summary><p id="nl-memory-path" class="native-digest"></p><small id="nl-memory-verification" role="status"></small><small id="nl-memory-digest" class="native-digest"></small><div class="native-actions"><button id="nl-memory-read" data-idle>读取 Markdown</button><button id="nl-memory-reveal" data-idle>打开所在文件夹</button><button id="nl-memory-export" data-idle>导出 Markdown</button></div><pre id="nl-memory-text"></pre></details></aside></div>
  <footer id="nl-footer" hidden><div class="native-round"><span id="nl-round"></span><input id="nl-position" type="range" min="0" max="0" value="0" aria-label="实验轮次" data-idle></div><details id="nl-send-options" class="native-send-options"><summary>发送设置与上下文</summary><small id="nl-model-summary"></small><small id="nl-context-summary" role="status"></small><details id="nl-context-panel" hidden><summary>本轮附带的记忆</summary><label>仅发送所选记忆，仍须通过内核准入；默认不附带。可用 Ctrl / Command 多选。<select id="nl-context" multiple size="3" data-idle></select></label><label><input id="nl-context-keep" type="checkbox" data-idle>保持本实验的选择（每轮重新校验）</label><small>待办优先列出；历史记忆检索暂不支持。最近聊天仍按时效与容量裁剪。</small></details><div id="nl-query-options"><label><input id="nl-history" type="checkbox" checked data-idle>附带适用的历史聊天</label><button id="nl-followup" type="button" data-idle>填入证据回顾问题</button><button id="nl-baseline" type="button" data-idle>本次对照：不附带记忆和聊天</button></div><label><input id="nl-temporary" type="checkbox" data-idle>仅本轮临时处理：允许发送模型，不保存对话或记忆</label></details><form id="nl-composer"><textarea id="nl-input" rows="2" aria-label="发送给模型的消息" placeholder="输入消息；Enter 发送，Shift + Enter 换行" data-idle></textarea><button id="nl-send" data-idle>发送</button><button id="nl-cancel" type="button" disabled>取消请求</button></form><small>模型建议 → 内核自动准入或按需确认 → 本机保存。删除记忆不等于删除原始聊天。</small></footer>`;
  doc.body.append(dialog);
- for(const id of ['archive-panel','archive-meta','archive-import','archive-clear','archive-list','archive-detail','archive-view','send-options','script-grid','script-import','script-file','script-replay','script-clear','script-panel','script-hash','script-round','script-preview','script-state','script-use','answer-view','followup','history','query-options','baseline','temporary','personal-panel','personal-form','personal-category','personal-value','personal-purpose','personal-preview','context', 'context-panel', 'context-summary', 'context-keep', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
+ for(const id of ['relation','graph-help','memory-verification','archive-panel','archive-meta','archive-import','archive-clear','archive-list','archive-detail','archive-view','send-options','script-grid','script-import','script-file','script-replay','script-clear','script-panel','script-hash','script-round','script-preview','script-state','script-use','answer-view','followup','history','query-options','baseline','temporary','memory-privacy','memory-file','memory-path','memory-digest','memory-read','memory-reveal','memory-export','memory-text','role','archive-replay','context', 'context-panel', 'context-summary', 'context-keep', 'help', 'sample', 'close', 'start-view', 'chat-view', 'evolution-view', 'graph-view', 'records', 'experiments', 'rename-name', 'rename', 'reset', 'remove', 'export-rules', 'export-memory', 'export-turns', 'export', 'guide', 'guide-progress', 'guide-title', 'guide-description', 'guide-action', 'guide-next', 'guide-skip', 'title', 'policy', 'policy-view', 'status', 'recover', 'setup', 'model-panel', 'models', 'profile-new', 'provider', 'protocol', 'base', 'model', 'key', 'save-key', 'stream', 'profile-save', 'test', 'profile-delete', 'rules-panel', 'rules-selected', 'rules-default', 'rules-import', 'rules', 'rules-review', 'rules-undo', 'rules-preview', 'rules-preview-hash', 'rules-preview-text', 'rules-accept', 'rules-cancel', 'current-rules', 'current-rules-hash', 'current-rules-text', 'name', 'new', 'create-summary', 'workspace', 'filter', 'fit', 'graph-note', 'live', 'conversation', 'graph', 'memories', 'details', 'footer', 'round', 'position', 'model-summary', 'composer', 'input', 'send', 'cancel'])ui[id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=dialog.querySelector('#nl-'+id);
  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('cancel',e=>{e.preventDefault();if(!working)leave();});
  const bind=(name,fn)=>ui[name].addEventListener('click',()=>guard(fn));
  bind('close',leave);
- bind('new',async()=>{clearPersonal();
+ bind('new',async()=>{
   if(!draft||ui.rules.value!==draft.text||preview)throw Error('请先预览并确认守则，或还原已选内容。');
-  exp=await call({op:'create',name:ui.name.value||'未命名实验',rules:draft.text,rules_source:draft.source});clearPreview();frameIndex=0;selected=null;ui.renameName.value=exp.name;await libraries();setView('chat');notice('实验已创建并保存。守则快照已固定，请选择模型后发送消息。');
+  exp=await call({op:'create',name:ui.name.value||'未命名实验',role:ui.role.value||'LOCAL',rules:draft.text,rules_source:draft.source});clearPreview();frameIndex=0;selected=null;ui.renameName.value=exp.name;await libraries();setView('chat');notice('实验已创建并保存。守则快照已固定，请选择模型后发送消息。');
  });
  bind('rename',()=>mutate('rename',{name:ui.renameName.value}));
- bind('remove',async()=>{clearPersonal();if(exp&&root.confirm('永久删除本机这一实验及对话、记忆数据库？已有外部导出不会被删除。')){await call({op:'remove',id:exp.id,revision:exp.revision});exp=null;selected=null;graph?.dispose();graph=null;ui.memories.replaceChildren();ui.details.replaceChildren();render();await libraries();}});
- bind('reset',async()=>{clearPersonal();if(!exp||!root.confirm('保留原实验，新建同守则的空实验？'))return;exp=await call({op:'create',name:exp.name+' · 重置',rules:exp.rules.text,...(exp.rules.source?{rules_source:exp.rules.source}:{})});clearPreview();frameIndex=0;selected=null;ui.renameName.value=exp.name;await libraries();setView('chat');});
+ bind('remove',async()=>{if(exp&&root.confirm('永久删除本机这一实验及对话、记忆数据库？已有外部导出不会被删除。')){await call({op:'remove',id:exp.id,revision:exp.revision});exp=null;selected=null;graph?.dispose();graph=null;graphExperiment=null;ui.memories.replaceChildren();ui.details.replaceChildren();render();await libraries();}});
+ bind('reset',async()=>{if(!exp||!root.confirm('保留原实验，新建同守则的空实验？'))return;exp=await call({op:'create',name:exp.name+' · 重置',role:exp.role,rules:exp.rules.text,...(exp.rules.source?{rules_source:exp.rules.source}:{})});clearPreview();frameIndex=0;selected=null;ui.renameName.value=exp.name;await libraries();setView('chat');});
  ui.experiments.onchange=()=>guard(async()=>{try{await open(ui.experiments.value);}catch(error){ui.experiments.value=exp?.id||'';throw error;}});
  ui.protocol.onchange=()=>{ui.base.value={openai:'https://api.openai.com/v1',anthropic:'https://api.anthropic.com/v1',gemini:'https://generativelanguage.googleapis.com/v1beta'}[ui.protocol.value];};
  ui.models.onchange=()=>{profileId=ui.models.value;const p=profiles.find(x=>x.id===profileId);ui.key.value='';ui.saveKey.checked=false;if(p){ui.provider.value=p.name;ui.protocol.value=p.protocol;ui.base.value=p.base_url;ui.model.value=p.model;}updateSetup();};
@@ -324,40 +344,36 @@ function createDialog(){
  ui.scriptFile.onchange=()=>guard(async()=>{const file=ui.scriptFile.files[0];ui.scriptFile.value='';if(!file)return;if(file.size>400000)throw Error('脚本超过400KB');const parsed=await scriptDraft(new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer()),file.name);script=parsed;ui.scriptRound.replaceChildren(...script.rows.map(r=>new Option('第 '+r.round+' 轮',String(r.round-1))));renderScript();notice('已核验原件哈希和连续28轮；没有保存或发送脚本文本。');});
  ui.scriptRound.onchange=renderScript;
  bind('scriptClear',()=>{clearScript();notice('本次导入已清除；已保存的实验不变。');});
- bind('scriptUse',()=>{if(!script||!exp)throw Error('请先导入原件并创建实验');const row=script.rows[Number(ui.scriptRound.value)];if(root.MemoryModel.isSensitive(row.input)||root.MemoryModel.personalKind(row.input))throw Error('本轮须先脱敏或通过独立授权处理');setView(exp?'chat':'setup');ui.input.value=row.input;notice('仅填入原文，未发送；人物标签不是认证或保存授权。');ui.input.focus();});
+ bind('scriptUse',()=>{if(!script||!exp)throw Error('请先导入原件并创建实验');const row=script.rows[Number(ui.scriptRound.value)];if(root.MemoryModel.forbiddenPersonal(row.input))throw Error('本轮含禁存信息，请先脱敏');setView(exp?'chat':'setup');ui.input.value=row.input;notice('仅填入原文，未发送；人物标签不是认证或保存授权。');ui.input.focus();});
  bind('scriptReplay',sample);
  bind('followup',()=>{setView(exp?'answer':'setup');if(!exp)throw Error('请先创建实验');ui.input.value='请依据本次实际提供的上下文，列出当前有效事实、未完成任务和仍不能确定的事项；没有依据请明确说明。';ui.input.focus();notice('问题已填入，未请求模型。可先运行无记忆无历史对照，再选择获准记忆发送同一问题。');});
  bind('baseline',()=>{for(const option of ui.context.options)option.selected=false;ui.contextKeep.checked=false;ui.history.checked=false;contextSummary();notice('下次请求仍使用实验守则，但不附带记忆或历史。请自行输入并发送对照问题。');});
  bind('recover',()=>mutate('abort',{request_id:exp.pending.request_id,status:'interrupted'}));
  bind('export',async()=>{if(!exp)throw Error('请先打开实验');const sections=['rules','memory','turns'].filter(x=>dialog.querySelector('#nl-export-'+x).checked);if(!sections.length)throw Error('请选择导出范围');notice(await invoke('export_experiment',{id:exp.id,sections})?'已保存所选实验数据。':'已取消导出。');});
- bind('startView',()=>setView('setup'));bind('archiveView',()=>setView('archive'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>setView('graph'));bind('answerView',()=>setView('answer'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;ui.context.onchange=contextSummary;ui.history.onchange=contextSummary;
+ bind('startView',()=>setView('setup'));bind('archiveView',()=>setView('archive'));bind('chatView',()=>setView('chat'));bind('evolutionView',()=>setView('evolution'));bind('graphView',()=>setView('graph'));bind('answerView',()=>setView('answer'));bind('fit',()=>graph?.reset());ui.filter.onchange=render;ui.relation.onchange=render;ui.context.onchange=contextSummary;ui.history.onchange=contextSummary;
  ui.position.oninput=()=>{frameIndex=Number(ui.position.value);render();};
- ui.personalForm.onsubmit=e=>{e.preventDefault();return guard(async()=>{
-  if(!exp)throw Error('请先创建实验');
-  const plan={category:ui.personalCategory.value,value:ui.personalValue.value,purpose:ui.personalPurpose.value.trim(),scope:exp.id};
-  const local=personalDraft.review(plan,true);ui.personalValue.value='';ui.personalPurpose.value='';
-  try{
-   const reviewed=await call({op:'privacy_review',id:exp.id,revision:exp.revision,plan,save_intent:true});
-   if(reviewed.personal_already_saved){clearPersonal();delete reviewed.personal_already_saved;exp=reviewed;render();notice('同一保存方案已有效确认，保留现有版本，无需再次确认。');return;}
-   personalApproval={localId:local.id,token:reviewed.privacy_token,requestId:reviewed.privacy_request.id,experiment:exp.id,revision:reviewed.revision};delete reviewed.privacy_token;exp=reviewed;
-   ui.personalPreview.replaceChildren(text('p',local.masked),text('p','用途：'+local.purpose),text('p','范围：当前实验，仅本机查看及主动导出；不发送模型，不共享。仅确认本人有权保存的最少信息。'),button('确认保存此方案',async()=>{
-    const approval=personalApproval;
-    if(!approval||approval.experiment!==exp?.id||approval.revision!==exp.revision){clearPersonal();throw Error('方案已变化，请重新提供');}
-    const confirmedPlan=personalDraft.take(approval.localId);clearPersonal();
-    try{exp=await call({op:'privacy_commit',id:exp.id,revision:approval.revision,request_id:approval.requestId,token:approval.token,plan:confirmedPlan,confirmed:true});frameIndex=exp.frames.length-1;render();notice('已读回核验本地保存结果；没有发送给模型。');}
-    catch(error){await recoverSaved(exp.id,error);}
-   }),button('不保存并清空',async()=>{clearPersonal();await mutate('privacy_cancel');notice('临时信息已清空；未保存原值。');}));
-   ui.personalPreview.hidden=false;personalTimer=root.setTimeout(()=>{clearPersonal();notice('确认已过期，临时输入已清空；需要保存时请重新提供。');},120000);
-   render();
-  }catch(error){clearPersonal();throw error;}
- });};
- for(const el of [ui.personalValue,ui.personalPurpose,ui.personalCategory])el.oninput=()=>{if(personalApproval)clearPersonal();};
+ bind('memoryRead',async()=>{if(!exp)throw Error('请先打开实验');const record=await call({op:'role_memory',id:exp.id});ui.memoryText.textContent=record.text;ui.memoryPath.textContent=record.path;ui.memoryDigest.textContent=record.sha256;});
+ bind('memoryReveal',async()=>{if(!exp)throw Error('请先打开实验');notice(await invoke('reveal_role_memory',{id:exp.id}));});
+ bind('memoryExport',async()=>{if(!exp)throw Error('请先打开实验');notice(await invoke('export_role_markdown',{id:exp.id})?'已导出角色私人记忆，请谨慎共享。':'已取消导出。');});
+ bind('archiveReplay',async()=>{
+  if(!archive||!exp)throw Error('请先创建目标角色实验，并打开本地 ZIP');
+  if(!root.confirm(`将 ZIP 中用户消息作为角色 ${exp.role} 的待审核自述，在新实验逐批重新治理？ZIP 标签不会授予权限；不会调用模型或复用历史助手回答。仅本地能可靠识别的陈述会生效，其余记录为无变化。`))return;
+  const source=archive;exp=await call({op:'create',name:exp.name+' · ZIP重新治理',role:exp.role,rules:exp.rules.text,...(exp.rules.source?{rules_source:exp.rules.source}:{})});
+  let stopped=false;running={busy:true,stop:async()=>{stopped=true;}};ui.cancel.disabled=false;
+  try{for(const batch of source.batches){if(stopped)break;notice(`本地重新治理 ${batch.number} / ${source.batches.length} 批；未调用模型。`);
+   exp=await invoke('replay_archive_batch',{id:exp.id,revision:exp.revision,archiveToken:source.archive_token,batch:batch.number,sha256:source.sha256,adoptUserMessages:true});
+   frameIndex=exp.frames.length-1;setView('evolution');
+  }await libraries();notice((stopped?'已停止；已完成批次保留。':'本地逐批重新治理完成。')+(exp.privacy_notice?exp.privacy_notice.message+' '+exp.privacy_notice.path:'')+' 请按轮查看实际变化；未提取内容不等于历史平台未保存。');}
+  catch(error){await recoverSaved(exp.id,error);}finally{running=null;}
+ });
  ui.composer.onsubmit=e=>{e.preventDefault();return guard(async()=>{
   if(!exp)throw Error('请新建实验');
-  const profile=profiles.find(x=>x.id===profileId);if(!profile)throw Error('请选择模型配置');
-  clearPersonal();
+
   const input=ui.input.value;if(!input.trim())return;
-  if(!ui.temporary.checked&&(root.MemoryModel.isSensitive(input)||root.MemoryModel.personalKind(input))){ui.input.value='';throw Error('个人信息未发送或保存。可先脱敏继续任务，或使用“本地私人记忆”明确保存。');}
+  if(!ui.temporary.checked&&(root.MemoryModel.isSensitive(input)||root.MemoryModel.personalKind(input)||/^(?:请)?(?:删除|忘记)(?:我的?)?(?:健康(?:信息|记忆)?|诊断|住址|地址|联系方式|手机号|家庭(?:信息|记忆)?|personal_(?:health|address|contact|family)|preference)$/.test(input.trim()))){
+   try{await mutate('ingest',{input,request_id:root.crypto.randomUUID()});ui.input.value='';notice(exp.privacy_notice?exp.privacy_notice.message+' '+exp.privacy_notice.path:'本地处理已核验；请查看实际变化。没有发送给模型，未满足准入的信息未保存。');}catch(error){ui.input.value='';throw error;}return;
+  }
+  const profile=profiles.find(x=>x.id===profileId);if(!profile)throw Error('请选择模型配置');
   clearPreview();
   const phase=text('small','AI 回复 · 接收中，尚未保存'),preview=text('p','等待响应…');
   ui.live.replaceChildren(text('small','本轮输入'),text('p',input),phase,preview);ui.live.hidden=false;
@@ -383,8 +399,8 @@ function createDialog(){
  ui.input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ui.composer.requestSubmit();}};
  ui.cancel.addEventListener('click',async()=>{try{await running?.stop();notice('已请求取消，正在核对保存状态。');}catch(e){notice(String(e));}});
 }
-function leave(){clearPersonal();clearScript();clearArchive();if(running?.busy)throw Error('请先取消请求或等待结束');graph?.dispose();graph=null;clearPreview();ui.input.value='';dialog.close();entry.focus();}
-root.addEventListener('pagehide',()=>{clearScript();clearArchive();clearPersonal();if(ui.input){ui.input.value='';clearPreview();}running?.stop();graph?.dispose();graph=null;});
+function leave(){clearScript();clearArchive();if(running?.busy)throw Error('请先取消请求或等待结束');graph?.dispose();graph=null;graphExperiment=null;clearPreview();ui.input.value='';dialog.close();entry.focus();}
+root.addEventListener('pagehide',()=>{clearScript();clearArchive();if(ui.input){ui.input.value='';clearPreview();}running?.stop();graph?.dispose();graph=null;graphExperiment=null;});
 entry.onclick=()=>{if(!dialog)createDialog();return guard(async()=>{
   root.dispatchEvent(new Event('memory-native-open'));const welcome=doc.getElementById('welcome');if(welcome)welcome.hidden=true;dialog.showModal();
   if(!builtin){builtin=await ruleDraft(await invoke('default_rules'),'memory-rules.md','builtin');useRules(builtin);}
@@ -392,6 +408,6 @@ entry.onclick=()=>{if(!dialog)createDialog();return guard(async()=>{
   let seen=false;try{seen=root.localStorage?.getItem('memory-lab.desktop-guide-seen')==='1';}catch{}
   if(!seen&&!ui.experiments.value&&ui.experiments.children.length===1)showGuide();
  });};
-// A desktop launch goes straight to setup; public Pages never enters this branch.
+// Windows launches directly into its local experiment workspace.
 if(doc.readyState)root.addEventListener('load',()=>entry.click(),{once:true});
 })(typeof window!=='undefined'?window:globalThis);

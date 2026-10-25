@@ -111,8 +111,8 @@ dl{margin:12px 0;display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px 1
 .native-guide>div{flex:1;min-width:0}.native-guide span{font-size:13px;color:var(--muted);margin-right:12px;font-variant-numeric:tabular-nums}.native-guide strong{font-weight:600}.native-guide p{font-size:13px;margin:4px 0 0;color:var(--muted)}
 .native-workspace{display:grid;grid-template-columns:minmax(0,1fr) 304px;flex:1;min-height:0;border-top:1px solid var(--line)}
 .native-workspace>section{min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
-.native-view{display:flex;align-items:center;gap:12px;padding:8px 24px;flex-shrink:0}.native-view:has(#nl-filter[hidden]){display:none}.native-view select{width:auto}.native-view span{font-size:13px;color:var(--muted)}
-.native-workspace aside{min-height:0;overflow:auto;border-left:1px solid var(--line);padding:16px 20px}.native-workspace aside>h2{margin-top:0}
+.native-view{display:flex;align-items:center;gap:12px;padding:8px 24px;flex-shrink:0}.native-view:has(#nl-filter[hidden]){display:none}.native-view select{width:auto;max-width:200px}.native-view{flex-wrap:wrap;gap:8px}.native-view span{font-size:13px;color:var(--muted)}
+.native-workspace aside{background:var(--frame);min-height:0;overflow:auto;border-left:1px solid var(--line);padding:16px 20px}.native-workspace aside>h2{margin-top:0}
 .native-conversation{padding:0 24px 24px;overflow:auto;min-height:0;flex:1}.native-conversation p,.native-workspace aside p,.native-live p{white-space:pre-wrap;overflow-wrap:anywhere;max-width:80ch}
 .native-lab h2{font-size:16px;margin:20px 0 10px}.native-lab small{font-size:13px;color:var(--muted)}
 .native-conversation>h2:first-child{margin-top:16px}.native-candidate{padding:12px 0;border-bottom:1px solid var(--line)}.native-candidate button{margin:4px 8px 4px 0;border-color:var(--line);white-space:normal}
@@ -126,7 +126,7 @@ dl{margin:12px 0;display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px 1
 @media(max-width:950px){.native-setup-columns{grid-template-columns:minmax(0,1fr)}.native-guide{flex-wrap:wrap}.native-guide>div{flex-basis:100%}.native-heading{flex-wrap:wrap;gap:4px}.native-heading>button{margin-left:auto;flex-shrink:0}.native-heading h1{max-width:100%}}
 @media(prefers-reduced-motion:reduce){.native-lab button{transition:none}.native-setup,.native-workspace{animation:none}}
 
-.native-lab #nl-personal-form{display:grid;grid-template-columns:1fr 2fr;align-items:end;gap:10px;margin:12px 0}.native-lab #nl-personal-form label:nth-child(2){grid-column:1/-1}.native-lab #nl-personal-preview{padding:10px 0}.native-lab #nl-personal-preview button{margin:4px 8px 4px 0}
+
 
 /* Native-only script review and controlled follow-up queries. */
 .native-script{margin:0 24px 8px;max-height:38dvh;overflow:auto;border-bottom:1px solid var(--line);flex-shrink:0}
@@ -160,3 +160,11 @@ dl{margin:12px 0;display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px 1
 @media(max-width:1100px){.native-lab{width:calc(100vw - 16px);height:calc(100dvh - 16px)}.native-heading{padding-top:10px}.native-lab footer{padding-top:8px;padding-bottom:8px}.native-round{margin-bottom:4px}}
 @media(max-width:760px){.native-header{padding:8px 16px;gap:8px;flex-wrap:wrap}.native-header>div{gap:4px}.native-nav{padding:0 16px;gap:0}.native-heading{padding:12px 16px 4px}.native-workspace{grid-template-columns:minmax(0,1fr);overflow:auto;display:block}.native-workspace>section{min-height:240px;overflow:visible}.native-conversation{overflow:visible;padding:0 16px 16px}.native-workspace aside{border-left:0;border-top:1px solid var(--line);padding:16px}.native-script{margin-left:16px;margin-right:16px}.native-script-browse{display:block}.native-script-grid{grid-template-columns:repeat(7,minmax(0,1fr))}.native-lab footer{padding-left:16px;padding-right:16px}.native-lab footer>small{display:none}.native-lab form{flex-wrap:wrap}.native-lab #nl-composer textarea{flex-basis:100%}.native-graph{min-height:320px}.native-record-actions{width:min(360px,calc(100vw - 48px))}}
 @media(max-width:760px){.native-archive{padding:14px 16px}.native-archive-bar{flex-wrap:wrap}.native-archive-columns{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:12px}.native-archive-columns nav{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:0 0 8px;gap:4px}.native-archive-columns nav button{width:auto;white-space:nowrap}}
+
+/* Relation workspace: the canvas and its keyboard list share the same selection. */
+.native-graph-help{padding:8px 24px 12px;color:var(--muted);flex-shrink:0}
+.native-workspace aside button[aria-pressed=true]{background:var(--surface);font-weight:600;padding-left:10px;padding-right:10px}
+.native-lab button:focus-visible,.native-lab select:focus-visible,.native-lab textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.native-nav{overflow-x:auto}.native-nav>button,.native-records{flex-shrink:0}
+.native-lab #nl-memory-privacy{margin:12px 0;font-size:13px;color:var(--text)}
+.native-lab #nl-memory-verification{display:block;margin:8px 0}

@@ -49,11 +49,11 @@ def sensitive(value):
     return credentials(text) or bool(re.search(
         r'(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|'
         r'(?<![A-Za-z0-9])(?:\d[\s-]*){13,19}[xX]?(?![A-Za-z0-9])|'
-        r'(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}|'
+        r'(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*(?:[:=：]|是|为)?\s*[0-9xX* -]{4,}|'
         r'(?:手机号?|手机号码|(?:联系)?电话(?:号码)?|联系方式|contact[_ -]?(?:phone|number)|telephone|phone(?:[_ -]?number)?|mobile(?:[_ -]?number)?)'
-        r'[\"\']?\s*[:=：]?\s*[\"\']?\s*\+?\(?(?:\d[\s().-]*){7,15}(?!\d)', numeric,re.I))
+        r'[\"\']?\s*(?:[:=：]|是|为)?\s*[\"\']?\s*\+?\(?(?:\d[\s().-]*){7,15}(?!\d)', numeric,re.I))
 
-PERSONAL_CATEGORIES=('contact','address','health','family')
+PERSONAL_CATEGORIES=('contact','address','health','family','background')
 
 def personal_kind(value):
     """Local risk routing only; not an exhaustive semantic classifier."""
@@ -61,7 +61,7 @@ def personal_kind(value):
     if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b',text):return 'contact'
     if sensitive(text) and re.search(r'\+[1-9](?:[\s().-]*\d){9,14}(?!\d)|(?:手机号?|联系|电话|phone|mobile|telephone)[^\n]{0,20}\d',text,re.I):return 'contact'
     for category,pattern in (
-        ('address',r'(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|home address|I live at)\s*[:：是为]?\s*\S+'),
+        ('address',r'(?:(?:我的?|家庭|居住|收货)(?:住址|地址)|我住在|home address|I live at)\s*[:：是为]?\s*\S+'),
         ('health',r'(?:我(?:的诊断|患有|确诊|有过敏|的病史|的健康)|my (?:diagnosis|medical history)|I (?:have been diagnosed|suffer from))'),
         ('family',r'(?:我的?(?:家属|配偶|孩子|子女|父亲|母亲)|my (?:spouse|child|daughter|son|parent))')):
         if re.search(pattern,text,re.I):return category
@@ -74,7 +74,7 @@ def forbidden_personal(value):
     if credentials(text):return True
     text=re.sub(r'\b(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b','',text,flags=re.I)
     text=re.sub(r'(?<![A-Za-z0-9+])\+[1-9](?:[\s().-]*\d){9,14}(?!\d)','',text)
-    return bool(re.search(r'(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*[:=：]?\s*[0-9xX* -]{4,}',text))
+    return bool(re.search(r'(?<![A-Za-z0-9])(?:\d[ -]*){13,19}[xX]?(?![A-Za-z0-9])|(?:身份证(?:号码?)?|(?:银行|信用)卡(?:号码?)?|银行(?:账户|账号))(?:尾号|末四位|后四位)?\s*(?:[:=：]|是|为)?\s*[0-9xX* -]{4,}',text))
 
 def valid_retention(payload):
     r=payload.get('retention')
@@ -93,7 +93,7 @@ def unsafe_fact(payload):
     if 'retention' in payload or payload.get('data_type')=='personal_information':return True
     if personal_kind(payload.get('value','')):return True
     business=payload.get('data_type')=='business_identifier'
-    if ('key' in payload and blocked_key(payload['key'])) or credentials(payload):
+    if ('key' in payload and (blocked_key(payload['key']) or ('value' in payload and str(payload['key']).startswith('personal_')))) or credentials(payload):
         return True
     if business and not re.fullmatch(r'[A-Za-z0-9._:/-]{1,80}',payload.get('value','')):
         return True
@@ -162,6 +162,24 @@ class Store(Governance):
             self.db.close(); raise
     def __enter__(self): return self
     def __exit__(self,*args): self.db.close()
+    def save_automatic_personal(self,ctx,*,seq,candidate,utterance,scope_id,request_id,source_turn):
+        from dataclasses import replace
+        from .governance import Evidence
+        if self.automatic_admission(ctx,candidate,utterance)=='manual':
+            return {'decisions':[self.decision('REJECT','本人来源或敏感自动准入条件不足')]}
+        if ctx.audience!='owner' or ctx.clearance!='restricted' or ctx.conversation!='experiment/'+scope_id.translate(str.maketrans('0123456789abcdef','abcdefghijklmnop')):
+            raise PermissionError('敏感自动保存超出本地角色范围')
+        category=personal_kind(candidate['value']) or 'background'
+        prior=self.read(ctx,ctx.role)['current'].get(candidate['key'])
+        retention=(prior['retention'] if prior and prior['value']==candidate['value'] and prior.get('retention') else
+                   dict(category=category,purpose='本人资料本地连续使用',scope=scope_id,request_id=request_id,use='local_only'))
+        op=dict(op='set',key=candidate['key'],value=candidate['value'],privacy='restricted',
+                data_type='personal_information',retention=retention)
+        for field in ('current_correction','archive_old'):
+            if field in candidate:op[field]=candidate[field]
+        return self.apply(replace(ctx,personal_grant=retention),{'seq':seq,'ops':[op]},scope='conversation',
+                          evidence=Evidence('personal/'+request_id,'owner_direct',source_turn,ctx.conversation))
+
     def save_personal(self,ctx,*,seq,plan,request_id):
         from dataclasses import replace
         from .governance import Evidence

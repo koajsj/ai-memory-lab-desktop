@@ -72,6 +72,14 @@ def check(binary):
         bad = subprocess.run([str(binary), str(invalid_root)], input=b'{"op":"list"}', capture_output=True, env=env, cwd=tmp, timeout=40)
         assert bad.returncode != 0 or json.loads(bad.stdout.decode('utf-8'))['ok'] is False
         assert invalid_root.read_text(encoding='utf-8') == 'must not overwrite'
+        exp=invoke({'op':'ingest','id':exp['id'],'revision':exp['revision'],'input':'我的诊断是季节性过敏','request_id':'native-personal'})
+        record=invoke({'op':'role_memory','id':exp['id']})
+        raw=Path(record['path']).read_bytes()
+        assert hashlib.sha256(raw).hexdigest()==record['sha256']==exp['memory_file']['sha256']
+        assert '季节性过敏' in raw.decode('utf-8') and exp['privacy_notice']['saved'] is True
+        exp=invoke({'op':'ingest','id':exp['id'],'revision':exp['revision'],'input':'请删除我的健康信息','request_id':'native-delete'})
+        record=invoke({'op':'role_memory','id':exp['id']})
+        assert '季节性过敏' not in record['text']
         assert invoke({'op': 'remove', 'id': exp['id'], 'revision': exp['revision']}) is True
         assert invoke({'op': 'list'}) == []
         archive = Path(tmp) / '分批 会话.zip'

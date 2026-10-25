@@ -2,11 +2,11 @@
 
 开发机使用 macOS；Windows 构建由私有仓库的 GitHub Actions `windows-latest` 完成，无须购买或更换设备。
 
-本仓库提供应用构建源码和安装包，不是完整参赛包。正式提交还须在比赛项目中备齐当前守则、真实最终角色记忆、官方导出的单个原始log.json和策略说明报告.docx，按官方目录组织；不得用SIMULATED演示或实验导出替代平台成果。应用内核、真实日志、角色文件、背景卡及完整submission不进入公开网页版仓库。
+本仓库提供应用构建源码和安装包，不是完整参赛包。正式提交还须在比赛项目中备齐当前守则、真实最终角色记忆、官方导出的单个原始log.json和策略说明报告.docx，按官方目录组织；不得用SIMULATED演示或实验导出替代平台成果。真实日志、角色文件、背景卡及完整 submission 不进入构建源码或安装包。
 
 ## 源码与权限
 
-公开仓库 `koajsj/teleagent` 仅维护静态网页版，不用于上传桌面内核。私有构建仓库为 `koajsj/ai-memory-lab-desktop`。上传前使用明确的文件白名单导出最小源码：
+只维护 Windows 桌面产品，前端与离线示例统一位于 `app/`。私有构建仓库为 `koajsj/ai-memory-lab-desktop`。导出已登记且逐字节核验的最小源码：
 
 ```sh
 python3 -B app/prepare-windows-ci.py --output /新的项目外目录/ai-memory-lab-desktop

@@ -83,7 +83,7 @@ const folder=realpathSync(await mkdtemp(path.join(os.tmpdir(),'memory-native-dom
 const elements=new Map();
 class El {
  constructor(tag='div'){this.tag=tag;this.children=[];this.events={};this.value='';this.hidden=false;this.checked=false;this.disabled=false;this.classList={toggle(){}};}
- set innerHTML(v){for(const match of v.matchAll(/<[^>]*\bid="(nl-[^"]+)"[^>]*>/g)){const e=new El();e.value=/\bvalue="([^"]*)"/.exec(match[0])?.[1]||'';e.checked=/\bchecked\b/.test(match[0]);e.hidden=/\bhidden\b/.test(match[0]);elements.set(match[1],e);}}
+ set innerHTML(v){for(const match of v.matchAll(/<[^>]*\bid="(nl-[^"]+)"[^>]*>/g)){const e=new El();e.value=/\bvalue="([^"]*)"/.exec(match[0])?.[1]||'';e.checked=/\bchecked\b/.test(match[0]);e.hidden=/\bhidden\b/.test(match[0]);e.textContent=v.slice(match.index+match[0].length).split('<')[0];elements.set(match[1],e);}}
  get innerHTML(){return '';}
  get options(){return this.children;}
  get selectedOptions(){const el=this;return {get length(){return el.children.filter(c=>c.selected).length;},*[Symbol.iterator](){for(let i=0;i<this.length;i++)yield el.children.filter(c=>c.selected)[i];}};}
@@ -96,7 +96,7 @@ let currentProfiles=[];let requests=0,dispose=0;let holdOpen=null;let savedProfi
 const preferences=new Map(),windowEvents={};let sampleData=null;
 let lastPrepared;
 const service=q=>{const value=JSON.parse(execFileSync(process.env.MEMORY_LAB_PYTHON||'python3',['-B','-m','tools.desktop_service',folder],{cwd:rootDir,input:JSON.stringify(q),encoding:'utf8'})).result;if(q.op==='prepare')lastPrepared=value;return value;};
-const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
+const originalEntry=new El('button');originalEntry.hidden=true;const graphInstance={setData(m){this.model=m;},setCatalog(){this.catalogResets=(this.catalogResets||0)+1;},configure(){},resizeToHost(){},request(){},setPaused(){},select(id){this.selected=id;},focus(){},reset(){},dispose(){dispose++;}};
 const timers=new Map();let timerId=0;
 const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),document:{readyState:'loading',body:new El('body'),createElement:tag=>new El(tag),getElementById:id=>id==='native-open'?originalEntry:null},MemoryModel:globalThis.MemoryModel,REPLAY_DATA:demo,MemoryWorkspace:{restore:data=>sampleData=data,view(){}},localStorage:{getItem:k=>preferences.get(k),setItem:(k,v)=>preferences.set(k,v)},MemoryGraph:{GraphView:function(host,options){graphInstance.options=options;return graphInstance;}},crypto:globalThis.crypto,matchMedia:()=>({matches:true}),dispatchEvent(){},addEventListener:(type,handler)=>windowEvents[type]=handler,confirm:()=>true,__TAURI__:{core:{Channel:class{},invoke:async(command,args)=>{
  if(command==='default_rules')return '测试守则：候选隔离，明确确认后裁决。';
@@ -105,7 +105,8 @@ const win={setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeou
  if(command==='experiment_call'){if(args.request.op==='profiles')return currentProfiles;if(args.request.op==='open'&&holdOpen)await holdOpen;if(args.request.op==='finish'&&failFinish)throw Error('实验保存失败样本');if(args.request.op==='open'&&failOpen)throw Error('实验重读失败样本');const saved=service(args.request);if(args.request.op==='decide'&&loseDecideReply){loseDecideReply=false;throw Error('裁决已提交但回复丢失样本');}return saved;}
  if(command==='save_profile'){savedProfileKey=args.key;currentProfiles=[{id:args.id,...args.profile}];return;}
  if(command==='model_request'){requests++;if(args.stream){args.onDelta.onmessage('实际响应样本');return {text:'实际响应样本',usage:null};}return {text:JSON.stringify({candidates:[{op:'set',key:'preference',value:requests>2?'详细回答':'简洁回答',basis:'self_report',evidence:{source:'current_input',quote:JSON.parse(args.messages[0].content).input}}],assessment}),usage:null};}
- if(command==='cancel_model')return;
+ if(command==='cancel_model'||command==='forget_chat_archive')return;
+ if(command==='replay_archive_batch')return service({op:'ingest',id:args.id,revision:args.revision,input:archiveImport.batches[args.batch-1].user.text,request_id:'fixture-replay-'+args.batch,replay_source:{sha256:args.sha256,batch:args.batch}});
  throw Error('Unexpected command '+command);
  }}}};
 try{
@@ -139,7 +140,7 @@ try{
  e('model').value='edited-model';await e('profile-save').click();assert.equal(savedProfileKey,null,'editing metadata with blank key must preserve the existing credential');
  e('input').value='请按我喜欢的简洁风格答复';e('stream').checked=true;
  await e('composer').onsubmit({preventDefault(){}}); // handler starts its async guard
- const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,true);e('position').oninput();assert.equal(e('send').disabled,true,'timeline refresh must not bypass unresolved candidates');
+ const rows=service({op:'list'});let exp=service({op:'open',id:rows[0].id});assert.equal(exp.turns.length,1);assert.equal(exp.turns[0].reply,'实际响应样本');assert.equal(exp.frames.length,1);assert.equal(exp.snapshot.current.preference,undefined);assert.equal(e('send').disabled,false);e('position').oninput();assert.equal(e('send').disabled,false,'unresolved suggestions must not block unrelated tasks');
  assert(e('conversation').children.some(x=>x.textContent==='模型建议 1 项 · 已记录裁决 0 项 · 待处理 1 项'),'the round summary must separate proposals from saved decisions');
  assert.deepEqual(exp.turns[0].assessment,assessment);
  const riskPanel=e('conversation').children.find(x=>x.children?.some(c=>c.textContent==='模型风险观察 · 未经独立核实'));
@@ -194,6 +195,11 @@ try{
  await e('memories').children.find(b=>b.textContent.includes('旧版本')).click();
  const evidence=e('details').children.find(x=>x.tag==='details').children.find(x=>x.tag==='pre').textContent;
  assert(evidence.includes('version_id'),'history aliases must resolve their actual registered evidence');
+ assert(e('details').children.some(x=>x.textContent==='关系'),'show actual registered relationships beside memory content');
+ assert(e('graph-help').textContent.includes('旋转'),'3D workspace must expose its mouse and keyboard fallback controls');
+ e('relation').value='DERIVE';e('relation').onchange();assert(graphInstance.model.edges.every(x=>x.type==='DERIVE'));
+ e('relation').value='all';e('relation').onchange();
+ assert.equal(e('memory-verification').textContent,'本轮 Markdown 已读回核验');
  let releaseOpen;holdOpen=new Promise(resolve=>releaseOpen=resolve);
  e('experiments').value=rows[0].id;const opening=e('experiments').onchange();
  await new Promise(resolve=>setImmediate(resolve));
@@ -299,25 +305,24 @@ try{
  assert(!unauthorized.children.some(c=>c.textContent==='确认派生并交由内核裁决'),'a derived proposal must not offer authority to restore deleted content');
  await unauthorized.children.find(c=>c.textContent==='核验操作依据').click();
  assert.equal(service({op:'open',id:unsafeDerived.id}).turns.at(-1).results['0'].decisions[0].action,'REJECT');
- // A mere mention is neither a model request nor a consent request.
+ // Sensitive owner statements are handled locally, written and verified before a risk notice.
  const countBeforePrivate=requests,privateExp=service({op:'create',name:'本地私人记忆回归',rules:'仅保存获准内容'});
  e('experiments').value=privateExp.id;await e('experiments').onchange();
- e('input').value='联系用 +1 (202) 555-0147';await e('composer').onsubmit({preventDefault(){}});
- assert.equal(requests,countBeforePrivate);assert.equal(service({op:'open',id:privateExp.id}).privacy_request,undefined);assert.equal(e('input').value,'');
- const reviewPrivate=async()=>{e('personal-category').value='contact';e('personal-value').value='+1 (202) 555-0147';e('personal-purpose').value='本地联系备忘';await e('personal-form').onsubmit({preventDefault(){}});};
- await reviewPrivate();assert.equal(e('personal-value').value,'');assert.equal(e('personal-preview').hidden,false);assert.equal(requests,countBeforePrivate);
- assert(!JSON.stringify(service({op:'open',id:privateExp.id})).includes('+1 (202) 555-0147'));
- await e('personal-preview').children.find(n=>n.textContent==='不保存并清空').click();assert.equal(e('personal-preview').hidden,true);
- await reviewPrivate();for(const fn of [...timers.values()])fn();assert.equal(e('personal-preview').hidden,true);
- await reviewPrivate();await e('personal-preview').children.find(n=>n.textContent==='确认保存此方案').click();
- assert.equal(service({op:'open',id:privateExp.id}).snapshot.current.personal_contact.value,'+1 (202) 555-0147');assert.equal(e('context').children.length,0);assert.equal(requests,countBeforePrivate);
+ e('input').value='我的手机号是 +1 (202) 555-0147';await e('composer').onsubmit({preventDefault(){}});
+ let privatelySaved=service({op:'open',id:privateExp.id});
+ assert.equal(requests,countBeforePrivate,'local personal admission must not send the value to a model');
+ assert.equal(privatelySaved.privacy_request,undefined);assert.equal(e('input').value,'');
+ assert.equal(privatelySaved.snapshot.current.personal_contact.value,'我的手机号是 +1 (202) 555-0147');
+ assert(e('status').textContent.includes(privatelySaved.memory_file.path),'post-write notice must identify the verified file');
+ assert(e('memory-privacy').textContent.includes(privatelySaved.memory_file.path),'sensitive notice stays visible after later round status updates');
+ await e('memory-read').click();assert(e('memory-text').textContent.includes('我的手机号是'));
+ assert.equal(e('memory-digest').textContent,privatelySaved.memory_file.sha256);
+ assert.equal(e('context').children.length,0,'sensitive automatic storage is not model-transfer authorization');
+ assert(!e('conversation').children.some(n=>n.textContent==='确认保存此方案'));
  await e('memories').children[0].click();await e('details').children.find(n=>n.textContent==='删除这条私人记忆').click();
  assert(!JSON.stringify(service({op:'export',id:privateExp.id,sections:['turns','memory']})).includes('+1 (202) 555-0147'));
- await reviewPrivate();await e('close').click();assert.equal(e('personal-preview').hidden,true);await originalEntry.click();
- e('experiments').value=privateExp.id;await e('experiments').onchange();
  const roundsBeforeTemporary=service({op:'open',id:privateExp.id}).turns.length;
- e('temporary').checked=true;e('input').value='我的诊断是过敏性鼻炎';
- await e('composer').onsubmit({preventDefault(){}});
+ e('temporary').checked=true;e('input').value='我的诊断是过敏性鼻炎';await e('composer').onsubmit({preventDefault(){}});
  assert.equal(requests,countBeforePrivate+1,'temporary processing calls only the reply model, not extraction');
  assert.equal(service({op:'open',id:privateExp.id}).turns.length,roundsBeforeTemporary);
  assert(!JSON.stringify(service({op:'export',id:privateExp.id,sections:['turns','memory']})).includes('过敏性鼻炎'));
@@ -338,6 +343,16 @@ try{
  assert.equal(afterLocalDelete.turns[0].input,'我偏好详细回答','删除记忆不冒充删除原始聊天');
  e('input').value='我的健康自述仅在输入框';windowEvents.pagehide();
  assert.equal(e('input').value,'');assert.equal(e('live').children.length,0);assert.equal(e('live').hidden,true);
+ // Explicit ZIP adoption creates a new role-scoped local replay, never a model request or historical answer.
+ const beforeReplayCalls=requests;
+ archiveImport={format:'memory-lab.chat-archive.v1',archive_token:'fixture-only',name:'synthetic.zip',sha256:'b'.repeat(64),counts:{batches:2,messages:2,user:2,assistant:0,assistant_with_text:0},batches:[
+  {number:1,user:{time:'2026-01-01',text:'我的诊断是季节性过敏'},assistant:[]},
+  {number:2,user:{time:'2026-01-02',text:'请删除我的健康信息'},assistant:[]}]};
+ await e('archive-import').click();await e('archive-replay').click();
+ const replayId=e('experiments').value,replayed=service({op:'open',id:replayId});
+ assert.equal(replayed.frames.length,2);assert.equal(replayed.turns[0].processing,'REEXECUTED_LOCAL');assert.equal(replayed.turns[0].reply,null);
+ assert.equal(replayed.snapshot.current.personal_health,undefined);assert.equal(requests,beforeReplayCalls);
+ assert.equal(e('position').value,'1');assert.equal(e('workspace').hidden,false);
  const experimentsBeforeSample=service({op:'list'}),callsBeforeSample=requests;
  await e('sample').click();assert.equal(sampleData.mode,'SIMULATED');assert.deepEqual(service({op:'list'}),experimentsBeforeSample);assert.equal(requests,callsBeforeSample);
  console.log('PASS：桌面入口、配置Key清空、两阶段真实内核提交、逐轮快照、图谱数据与详情、退出释放（最小DOM＋实际SQLite/Store；HTTP由夹具替代）。');

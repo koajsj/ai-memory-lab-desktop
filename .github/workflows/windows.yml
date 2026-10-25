@@ -4,7 +4,6 @@ on:
     branches: [main]
     paths:
       - 'app/**'
-      - 'web-public/**'
       - 'tools/**'
       - 'tests/**'
       - 'memory-rules.md'
@@ -82,7 +81,7 @@ jobs:
             ${{ steps.download-paths.outputs.npm }}
             ${{ steps.download-paths.outputs.pip }}
             ${{ steps.download-paths.outputs.nsis }}
-          key: windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('app/package-lock.json', 'web-public/package-lock.json', 'requirements-dev.txt', 'app/build-kernel.py', '.github/workflows/windows.yml') }}
+          key: windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('app/package-lock.json', 'requirements-dev.txt', 'app/build-kernel.py', '.github/workflows/windows.yml') }}
           restore-keys: |
             windows-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.image }}-node${{ steps.node.outputs.node-version }}-py${{ steps.python.outputs.python-version }}-
       - name: Restore Cargo dependencies and compiled libraries
@@ -124,8 +123,6 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm ci --prefer-offline --prefix app
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          npm ci --prefer-offline --prefix web-public
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Desktop persistence and UI contracts
         run: |
           node tools/check_windows_release.mjs
@@ -133,9 +130,9 @@ jobs:
           $env:MEMORY_LAB_PYTHON = (Get-Command python).Source
           # Independent read-only test suites share the installed dependencies.
           # Overlap Python/SQLite checks with JS checks; both exit codes gate packaging.
-          $testProcess = Start-Process -FilePath (Get-Command python).Source -ArgumentList '-B -m pytest -q -p no:cacheprovider tests/test_desktop_service.py' -NoNewWindow -PassThru
+          $testProcess = Start-Process -FilePath (Get-Command python).Source -ArgumentList '-B -m pytest -q -p no:cacheprovider tests' -NoNewWindow -PassThru
           try {
-            npm --prefix web-public run check
+            npm --prefix app run check:ui
             $uiExit = $LASTEXITCODE
             $testProcess.WaitForExit()
             if ($testProcess.ExitCode -ne 0) { exit $testProcess.ExitCode }

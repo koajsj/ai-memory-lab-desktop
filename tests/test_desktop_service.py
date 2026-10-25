@@ -513,7 +513,9 @@ def test_older_experiment_without_core_digest_is_checked_before_upgrade(service)
     old=json.loads(state);del old['core_sha256']
     service.db.execute('UPDATE experiments SET state=? WHERE id=?',(json.dumps(old,ensure_ascii=False),exp['id']))
     service.db.commit()
-    assert service.call({'op':'open','id':exp['id']})==old
+    reopened=service.call({'op':'open','id':exp['id']})
+    assert reopened.pop('memory_file')['revision']==old['revision']
+    assert reopened==old
     upgraded=service.call({'op':'rename','id':exp['id'],'revision':exp['revision'],'name':'兼容旧实验'})
     assert upgraded['core_sha256'] and upgraded['name']=='兼容旧实验'
     service.db.execute('UPDATE experiments SET state=?,core=? WHERE id=?',(json.dumps(old,ensure_ascii=False),b'',exp['id']))

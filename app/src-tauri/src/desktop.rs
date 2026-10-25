@@ -15,6 +15,7 @@ use tokio::sync::watch;
 #[derive(Default)]
 pub struct Runtime {
     keys: Mutex<HashMap<String, String>>,
+    archives: Mutex<HashMap<String, PathBuf>>,
     profiles: tokio::sync::Mutex<()>,
     requests: Mutex<HashMap<String, watch::Sender<bool>>>,
 }
@@ -29,7 +30,13 @@ fn credential(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("AI Memory Lab", id).map_err(|_| "系统凭据存储不可用".into())
 }
 fn model_key(state: &Runtime, id: &str) -> Result<String, String> {
-    if let Some(key) = state.keys.lock().map_err(|_| "凭据状态不可用")?.get(id).cloned() {
+    if let Some(key) = state
+        .keys
+        .lock()
+        .map_err(|_| "凭据状态不可用")?
+        .get(id)
+        .cloned()
+    {
         return Ok(key);
     }
     match credential(id)?.get_password() {
@@ -188,7 +195,8 @@ fn run_worker_command(mut cmd: Command, q: Value, timeout: Duration) -> Result<V
             && !message.chars().any(char::is_control))
             || matches!(
                 message,
-                "实验达到8MB容量，请导出后新建"
+                "数据库已提交，但角色Markdown尚未核验；请重新打开实验修复，勿重复提交"
+                    | "实验达到8MB容量，请导出后新建"
                     | "实验操作失败：输入、状态版本或存储异常；原数据未被部分提交。"
             ) {
             message.into()
@@ -223,6 +231,9 @@ pub async fn experiment_call(
         request["op"].as_str(),
         Some(
             "validate_candidates"
+                | "ingest"
+                | "role_memory"
+                | "memory_delete"
                 | "privacy_review"
                 | "privacy_commit"
                 | "privacy_cancel"
@@ -279,21 +290,103 @@ pub async fn import_rules() -> Result<Option<Value>, String> {
     }
 }
 #[tauri::command]
-pub async fn import_chat_archive(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+pub async fn import_chat_archive(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+) -> Result<Option<Value>, String> {
     let selected = rfd::AsyncFileDialog::new()
-        .set_title("只读导入本机会话 ZIP")
+        .set_title("只读打开本机会话 ZIP")
         .add_filter("ZIP archive", &["zip"])
         .pick_file()
         .await;
-    match selected {
-        Some(file) => {
-            let path = file.path().to_str().ok_or("会话路径无法表示")?;
-            service(&app, json!({"op":"inspect_chat_archive","path":path}))
-                .await
-                .map(Some)
-        }
-        None => Ok(None),
+    let Some(file) = selected else {
+        return Ok(None);
+    };
+    let path = file.path().to_path_buf();
+    let mut archive = service(&app, json!({"op":"inspect_chat_archive","path":path})).await?;
+    let token = format!(
+        "{:032x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "时钟不可用")?
+            .as_nanos()
+    );
+    let mut paths = state.archives.lock().map_err(|_| "会话状态不可用")?;
+    paths.clear();
+    paths.insert(token.clone(), path);
+    archive["archive_token"] = json!(token);
+    Ok(Some(archive))
+}
+#[tauri::command]
+pub fn forget_chat_archive(state: tauri::State<'_, Runtime>) -> Result<(), String> {
+    state.archives.lock().map_err(|_| "会话状态不可用")?.clear();
+    Ok(())
+}
+#[tauri::command]
+pub async fn replay_archive_batch(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Runtime>,
+    id: String,
+    revision: u64,
+    archive_token: String,
+    batch: u64,
+    sha256: String,
+    adopt_user_messages: bool,
+) -> Result<Value, String> {
+    identifier(&id)?;
+    if !adopt_user_messages {
+        return Err("须由本地用户明确绑定ZIP用户消息与当前角色".into());
     }
+    let path = state
+        .archives
+        .lock()
+        .map_err(|_| "会话状态不可用")?
+        .get(&archive_token)
+        .cloned()
+        .ok_or("会话来源已失效，请重新选择ZIP")?;
+    service(&app,json!({"op":"replay_batch","id":id,"revision":revision,"path":path,"batch":batch,"sha256":sha256,"adopt_user_messages":true})).await
+}
+#[tauri::command]
+pub async fn export_role_markdown(app: tauri::AppHandle, id: String) -> Result<bool, String> {
+    identifier(&id)?;
+    let record = service(&app, json!({"op":"role_memory","id":id})).await?;
+    let name = std::path::Path::new(record["path"].as_str().ok_or("记忆文件路径无效")?)
+        .file_name()
+        .ok_or("记忆文件名无效")?
+        .to_string_lossy()
+        .to_string();
+    if let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("导出角色私人记忆 Markdown，请谨慎共享")
+        .add_filter("Markdown", &["md"])
+        .set_file_name(&name)
+        .save_file()
+        .await
+    {
+        file.write(record["text"].as_str().ok_or("记忆内容无效")?.as_bytes())
+            .await
+            .map_err(|_| "Markdown导出失败")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+#[tauri::command]
+pub async fn reveal_role_memory(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    identifier(&id)?;
+    let record = service(&app, json!({"op":"role_memory","id":id})).await?;
+    let path = record["path"].as_str().ok_or("记忆文件路径无效")?;
+    #[cfg(windows)]
+    {
+        let system = PathBuf::from(std::env::var_os("SystemRoot").ok_or("系统目录不可用")?);
+        if !system.is_absolute() {
+            return Err("系统目录无效".into());
+        }
+        Command::new(system.join("explorer.exe"))
+            .arg(format!("/select,{}", path))
+            .spawn()
+            .map_err(|_| "无法打开记忆文件夹")?;
+    }
+    Ok(path.into())
 }
 // Credentials and SQLite cannot share a transaction. Restore the previous secret
 // if the catalog write fails, and serialize reads with configuration changes.

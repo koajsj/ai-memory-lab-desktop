@@ -4,7 +4,7 @@ import {fitView,stableLayout,placeLabels} from './view-math.mjs';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 const graphemes=typeof Intl.Segmenter==='function'?new Intl.Segmenter(undefined,{granularity:'grapheme'}):null;
-export const edgeColors={'主体归属':0xb6c0c6,'已存储历史版本':0x7c8993,SUPERSEDE:0x657d8b,DERIVE:0x1b6c80};
+export const edgeColors={'主体归属':0xb6c0c6,'已存储历史版本':0x7c8993,SUPERSEDE:0x657d8b,DERIVE:0x1b6c80,CONTRADICT:0x9b503e};
 export class GraphView {
   constructor(host,{onSelect,onUnavailable,states}){
     this.host=host;this.onSelect=onSelect;this.onUnavailable=onUnavailable;this.states=states;this.items=new Map();this.destroyed=false;this.motion=true;

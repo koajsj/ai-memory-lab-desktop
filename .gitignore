@@ -10,9 +10,11 @@ app/data.js
 app/assets-manifest.json
 app/releases/
 app/ci-artifact/
-web-public/dist/
-web-public/graph.bundle.js
-web-public/data.js
 *.log
 .env*
 .venv/
+
+# Local private memories and experiment catalogs are never release inputs.
+role-memory/
+*_mem.md
+experiments.sqlite*

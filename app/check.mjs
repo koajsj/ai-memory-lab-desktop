@@ -1,4 +1,4 @@
-// 独立公开演示检查；只使用本仓库虚构数据，不驱动浏览器。
+// 桌面离线演示检查；只使用本仓库虚构数据，不驱动浏览器。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -42,6 +42,19 @@ assert.throws(()=>M.parse(encoded.replace('"role": "ATLAS_DEMO"','"role": "ATLAS
 const stops=M.tour(ds);assert.equal(new Set(stops.map(s=>s.index)).size,stops.length);
 const derivation=M.graph(ds,12);
 assert(derivation.edges.some(edge=>edge.type==='DERIVE'),'有登记派生证据时，应允许查看无值关系，不恢复删除载荷');
+// Relationship workspace may show registered history beyond the snapshot's last alias.
+{
+ const frame=structuredClone(ds.data.frames[12]);
+ const original=frame.governance.versions.find(r=>r.payload);
+ const older={...structuredClone(original),version_id:'archived-version',revision:1001,lifecycle:'superseded',part:'history',relations:[]};
+ frame.governance.versions.push(older);
+ original.relations.push({parent:older.version_id,child:original.version_id,relation:'CONTRADICT',unresolved:true});
+ const expanded=M.graph({role:ds.role,data:{frames:[frame]}},0,{includeVersions:true});
+ assert(expanded.nodes.some(n=>n.evidence?.version_id===older.version_id),'registered older versions must remain explorable');
+ assert(expanded.edges.some(e=>e.type==='CONTRADICT'&&e.unresolved===true),'registered unresolved conflicts must be visible');
+ assert.equal(M.graph({role:ds.role,data:{frames:[frame]}},0).nodes.some(n=>n.evidence?.version_id===older.version_id),false,'ordinary snapshots stay unchanged');
+ assert.deepEqual(M.graph({role:ds.role,data:{frames:[frame]}},0,{includeVersions:true,privateVisible:false}),{nodes:[],edges:[],count:0});
+}
 for(const n of derivation.nodes.filter(n=>n.redacted)){assert.equal(n.payload,null);assert.equal(n.state,'retired');assert(n.evidence);}
 assert(derivation.nodes.some(n=>n.redacted));
 for(const n of [12,14,16,21,22])assert(stops.some(s=>s.index===n-1),'路演缺少现有治理事件 '+n);
@@ -243,7 +256,7 @@ class Element{
 }
 const html=fs.readFileSync(runtime+'index.html','utf8'),elements=Object.fromEntries([...html.matchAll(/\bid="([\w-]+)"/g)].map(m=>[m[1],new Element(m[1])]));
 assert.equal(Object.keys(elements).length,[...html.matchAll(/\bid="([\w-]+)"/g)].length,'界面 ID 不得重复');
-assert(html.includes("connect-src 'none'"));assert(!/(?:src|href)="(?:https?:|\/)/.test(html));
+assert(html.includes("connect-src ipc: http://ipc.localhost"),'Windows renderer network access is limited to native IPC');assert(!/(?:src|href)="(?:https?:|\/)/.test(html));
 for(const [k,v]of Object.entries({category:'all',state:'all',source:'all',permission:'owner',speed:'1'}))elements[k].value=v;
 const details=[new Element(),new Element()];let frame,graph;
 const keyboardHandlers={},windowHandlers={};
@@ -294,7 +307,7 @@ await elements['close-inspector'].click();assert.equal(elements.inspector.hidden
 ui.innerWidth=1920;windowHandlers.resize();assert.equal(elements.inspector.hidden,false);
 elements.range.value='17';await elements.range.fire('input');assert.equal(elements.range.attrs['aria-valuetext'],'第 17 轮，共 28 轮');
 const selected=M.graph(ds,16).nodes.find(n=>n.id===graph.selected);assert.equal(elements['node-title'].textContent,selected.label);
-console.log('PASS：公开网页版Escape、响应式详情开关、节点联动与滑杆辅助文本（最小DOM，非像素布局）。');
+console.log('PASS：桌面离线视图Escape、响应式详情开关、节点联动与滑杆辅助文本（最小DOM，非像素布局）。');
 const downloads=[],revoked=[];
 sandbox.URL={createObjectURL(blob){downloads.push(blob);return 'blob:local-export';},revokeObjectURL(url){revoked.push(url);}};
 await elements.restore.click();elements.range.value='14';await elements.range.fire('input');
@@ -382,4 +395,4 @@ elements['memory-browser'].open=false;elements['graph-fallback'].hidden=true;
 sandbox.window={...ui,MemoryGraph:{...loaded,GraphView:class{constructor(){throw Error('synthetic WebGL unavailable');}}}};
 vm.runInNewContext(fs.readFileSync(runtime+'app.js','utf8'),sandbox);
 assert.equal(elements['memory-browser'].open,true);assert.equal(elements['graph-fallback'].hidden,false);assert(elements['node-list'].children.length>0);assert.equal(elements['detail-focus'].disabled,true);assert.equal(elements.reset.disabled,true);assert.equal(elements['graph-caption'].hidden,true);
-console.log('PASS：公开网页版WebGL不可用时二维列表和时间轴仍可使用（合成故障）。');
+console.log('PASS：桌面离线视图WebGL不可用时二维列表和时间轴仍可使用（合成故障）。');

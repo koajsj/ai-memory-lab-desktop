@@ -56,6 +56,16 @@ try{
   delete sources.files['tools/governance.py'];await writeFile(registry,JSON.stringify(sources));
   await assert.rejects(()=>verifyInputs(project,data),/governance/);
   assert.equal(await readFile(path.join(project,'app/evaluation.json'),'utf8'),evaluation);
+  // Relocation must still bind the immutable demo hash to the single desktop source.
+  const relocated=path.join(tmp,'relocated-demo');await mkdir(path.join(relocated,'app/src'),{recursive:true});
+  await writeFile(path.join(relocated,'source-manifest.json'),JSON.stringify({format:'memory-lab.private-source.v1',files:{}}));
+  await writeFile(path.join(relocated,'app/evaluation.json'),JSON.stringify({inputs:{'web-public/src/public-demo.json':sha256(Buffer.from(data))}}));
+  await writeFile(path.join(relocated,'app/src/public-demo.json'),data);
+  await verifyInputs(relocated,'unused');
+  await writeFile(path.join(relocated,'app/src/public-demo.json'),'stale desktop demo');
+  await mkdir(path.join(relocated,'web-public/src'),{recursive:true});
+  await writeFile(path.join(relocated,'web-public/src/public-demo.json'),data);
+  await assert.rejects(()=>verifyInputs(relocated,'unused'),/public-demo/,'an old Web copy cannot substitute for the desktop input');
   const dir=path.join(tmp,'中文 空格');await mkdir(dir);
   const bytes=Buffer.from('仅为文件完整性样本');await writeFile(path.join(dir,'payload.bin'),bytes);
   const record={size:bytes.length,sha256:sha256(bytes)};
